@@ -16,7 +16,7 @@ import { z } from 'zod'
 dotenv.config({ path: path.resolve(process.cwd(), '.env') })
 
 /** Parses `"true" | "1" | "yes" | "on"` (case-insensitive) into a boolean. */
-const booleanFromString = (defaultValue: boolean): z.ZodType<boolean> =>
+const booleanFromString = (defaultValue: boolean): z.ZodType<boolean, z.ZodTypeDef, unknown> =>
   z
     .union([z.boolean(), z.string()])
     .default(defaultValue)
@@ -37,7 +37,7 @@ const csvList = z
   )
 
 /** A `jsonwebtoken` style duration: `15m`, `7d`, `3600s`, or bare seconds. */
-const duration = (defaultValue: string): z.ZodType<string> =>
+const duration = (defaultValue: string): z.ZodType<string, z.ZodTypeDef, unknown> =>
   z
     .string()
     .default(defaultValue)

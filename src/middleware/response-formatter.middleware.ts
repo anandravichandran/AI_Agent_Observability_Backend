@@ -69,21 +69,21 @@ export const createResponseFormatter = (apiVersion: string): RequestHandler => {
       data: TData,
       message = 'Request completed successfully.',
       pagination?: PaginationMeta,
-    ): Response {
+    ) {
       return this.respond(HttpStatus.OK, data, message, pagination)
     }
 
     res.created = function created<TData>(
       data: TData,
       message = 'Resource created successfully.',
-    ): Response {
+    ) {
       return this.respond(HttpStatus.CREATED, data, message)
     }
 
     res.accepted = function accepted<TData>(
       data: TData,
       message = 'Request accepted for processing.',
-    ): Response {
+    ) {
       return this.respond(HttpStatus.ACCEPTED, data, message)
     }
 

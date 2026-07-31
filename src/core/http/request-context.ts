@@ -1,5 +1,7 @@
 import type { Request } from 'express'
+import type { DeviceFingerprintConfig } from '@/config/config.types'
 import { UnauthorizedError } from '@/core/errors/app-error'
+import { computeDeviceFingerprint } from '@/core/security/device-fingerprint'
 import type { AuthenticatedActor, RequestContext } from '@/modules/auth/auth.types'
 
 /**
@@ -17,6 +19,27 @@ export const toRequestContext = (req: Request): RequestContext => ({
   userAgent: req.get('user-agent') ?? 'unknown',
   requestId: req.id,
 })
+
+/**
+ * Computes the coarse device fingerprint for a request, when fingerprinting
+ * is enabled.
+ *
+ * Threaded through `AuthController.buildContext` rather than folded into
+ * `toRequestContext` itself, so contexts built outside an HTTP request (a
+ * queue consumer, a test) are not forced to fabricate a fingerprint input.
+ */
+export const computeRequestFingerprint = (
+  req: Request,
+  config: DeviceFingerprintConfig,
+): string | undefined => {
+  if (!config.enabled) return undefined
+
+  return computeDeviceFingerprint({
+    userAgent: req.get('user-agent') ?? 'unknown',
+    acceptLanguage: req.get('accept-language'),
+    ip: req.ip ?? req.socket.remoteAddress ?? 'unknown',
+  })
+}
 
 /**
  * Returns the authenticated principal, or throws.

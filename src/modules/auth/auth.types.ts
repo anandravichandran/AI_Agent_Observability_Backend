@@ -19,7 +19,12 @@ export interface RequestContext {
   readonly ip: string
   readonly userAgent: string
   readonly requestId: string
+  /** Coarse device fingerprint, present when fingerprinting is enabled. */
+  readonly fingerprint?: string
 }
+
+/** Where the access token used to authenticate a request came from. */
+export type AuthTokenSource = 'header' | 'cookie'
 
 // ---------------------------------------------------------------------------
 // Tokens
@@ -111,6 +116,8 @@ export interface SessionDto {
   readonly expiresAt: string
   /** True when this session issued the token on the current request. */
   readonly current: boolean
+  /** Best-effort country of origin; null when geo tracking is disabled or the address is private. */
+  readonly geoCountry: string | null
 }
 
 /** Returned by register — no tokens, because email is not yet verified. */

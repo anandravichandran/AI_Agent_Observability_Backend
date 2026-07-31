@@ -23,6 +23,7 @@ import type { AuditController } from '@/modules/audit/audit.controller'
 import type { UserController } from '@/modules/users/user.controller'
 import type { AdminController } from '@/modules/admin/admin.controller'
 import type { ModelController } from '@/modules/models/model.controller'
+import type { ApiKeyController } from '@/modules/apiKeys'
 
 export interface CreateAppDependencies {
   readonly config: AppConfig
@@ -41,6 +42,9 @@ export interface CreateAppDependencies {
   readonly modelController: ModelController
   /** Model file upload middleware (disk-buffered). */
   readonly modelUpload: RequestHandler
+  readonly apiKeyController: ApiKeyController
+  /** Mongo-operator / prototype-pollution key-stripping guard. */
+  readonly sanitizeInput: RequestHandler
 }
 
 /**
@@ -81,6 +85,8 @@ export const createApp = ({
   avatarUpload,
   modelController,
   modelUpload,
+  apiKeyController,
+  sanitizeInput,
 }: CreateAppDependencies): Express => {
   const app = express()
 
@@ -104,6 +110,10 @@ export const createApp = ({
   // 6. Body parsing, bounded by the configured limit.
   app.use(express.json({ limit: config.http.bodyLimit }))
   app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }))
+
+  // 6b. Strip Mongo-operator and prototype-pollution keys from body/query/
+  //     params before any handler — including Zod validation — sees them.
+  app.use(sanitizeInput)
 
   // 7. Cookie parsing. Must sit ahead of `authenticate`, which reads the
   //    access token from `req.cookies`.
@@ -169,6 +179,7 @@ export const createApp = ({
       avatarUpload,
       modelController,
       modelUpload,
+      apiKeyController,
     }),
   )
 

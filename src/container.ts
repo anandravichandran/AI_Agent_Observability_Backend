@@ -59,6 +59,19 @@ import { createAuthenticate } from '@/middleware/authenticate.middleware'
 import { createAuthorize } from '@/middleware/authorize.middleware'
 import { createAvatarUpload } from '@/middleware/upload.middleware'
 import { createModelUpload } from '@/middleware/model-upload.middleware'
+import { chainMiddleware } from '@/middleware/compose.middleware'
+import { createCsrfProtection } from '@/middleware/csrf.middleware'
+import { createSanitizeMiddleware } from '@/middleware/sanitize.middleware'
+import { ApiKeyHasher } from '@/core/security/api-key-hasher'
+import type { IApiKeyHasher } from '@/core/security/api-key-hasher.interface'
+import { LocalGeoLocationService } from '@/infrastructure/geo'
+import type { IGeoLocationService } from '@/infrastructure/geo'
+import {
+  ApiKeyController,
+  ApiKeyService,
+  MongooseApiKeyRepository,
+} from '@/modules/apiKeys'
+import type { IApiKeyRepository, IApiKeyService } from '@/modules/apiKeys'
 import { createApp } from '@/app'
 
 export interface Container {
@@ -73,6 +86,7 @@ export interface Container {
   readonly userService: IUserService
   readonly adminService: IAdminService
   readonly modelService: IModelService
+  readonly apiKeyService: IApiKeyService
   readonly app: Express
 }
 
@@ -89,6 +103,7 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
   )
   const modelStorage: IModelStorage = new LocalModelStorage(config.modelUpload.dir, logger)
   const virusChecker: IVirusChecker = new NoopVirusChecker()
+  const geoLocationService: IGeoLocationService = new LocalGeoLocationService()
 
   // Ensure upload directories exist at boot rather than on first request.
   void mkdir(path.resolve(process.cwd(), config.modelUpload.dir), { recursive: true }).catch(() => {})
@@ -98,6 +113,7 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
   const passwordHasher: IPasswordHasher = new BcryptPasswordHasher(config.auth.password)
   const tokenService: ITokenService = new JwtTokenService(config.auth.jwt)
   const otpService: IOtpService = new OtpService(config.otp, config.auth.jwt.accessSecret)
+  const apiKeyHasher: IApiKeyHasher = new ApiKeyHasher(config.apiKey)
 
   // --- Repositories ---------------------------------------------------------
   const userRepository: IUserRepository = new MongooseUserRepository()
@@ -105,6 +121,7 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
   const sessionRepository: ISessionRepository = new MongooseSessionRepository()
   const auditLogRepository = new MongooseAuditLogRepository()
   const modelRepository: IModelRepository = new MongooseModelRepository()
+  const apiKeyRepository: IApiKeyRepository = new MongooseApiKeyRepository()
 
   // --- Services -------------------------------------------------------------
   const auditService: IAuditService = new AuditService({ repository: auditLogRepository, logger })
@@ -122,6 +139,8 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     authConfig: config.auth,
     otpConfig: config.otp,
     appConfig: config.app,
+    deviceFingerprintConfig: config.deviceFingerprint,
+    geoLocationService,
   })
 
   const userService: IUserService = new UserService({
@@ -149,20 +168,39 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     logger,
   })
 
+  const apiKeyService: IApiKeyService = new ApiKeyService({
+    repository: apiKeyRepository,
+    hasher: apiKeyHasher,
+    logger,
+  })
+
   // --- Health ---------------------------------------------------------------
   const reporters: HealthReporter[] = [new DatabaseHealthReporter(database)]
   const healthService: IHealthService = new HealthService({ app: config.app, http: config.http, reporters })
 
   // --- Controllers ----------------------------------------------------------
   const healthController = new HealthController(healthService)
-  const authController = new AuthController({ authService, cookieConfig: config.cookie })
+  const authController = new AuthController({
+    authService,
+    cookieConfig: config.cookie,
+    deviceFingerprintConfig: config.deviceFingerprint,
+  })
   const auditController = new AuditController(auditService)
   const userController = new UserController({ userService, cookieConfig: config.cookie })
   const adminController = new AdminController(adminService)
   const modelController = new ModelController(modelService)
+  const apiKeyController = new ApiKeyController(apiKeyService)
 
   // --- Guards & upload ------------------------------------------------------
-  const authenticate: RequestHandler = createAuthenticate({ tokenService, cookieConfig: config.cookie })
+  // Access-token verification, composed with CSRF verification so every
+  // session-cookie-authenticated mutation is protected in one guard. Bearer
+  // and API-key callers are unaffected — see `csrf.middleware.ts`.
+  const jwtAuthenticate: RequestHandler = createAuthenticate({ tokenService, cookieConfig: config.cookie })
+  const csrfProtection: RequestHandler = createCsrfProtection({
+    csrfConfig: config.csrf,
+    cookieConfig: config.cookie,
+  })
+  const authenticate: RequestHandler = chainMiddleware(jwtAuthenticate, csrfProtection)
   const authorize = createAuthorize({ auditService })
   const requireAdmin: RequestHandler = authorize.requireRoles(UserRole.ADMIN)
   const avatarUpload: RequestHandler = createAvatarUpload(config.upload.avatarMaxBytes)
@@ -170,6 +208,7 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     config.modelUpload.maxBytes,
     config.modelUpload.tempDir,
   )
+  const sanitizeInput: RequestHandler = createSanitizeMiddleware()
 
   // --- HTTP -----------------------------------------------------------------
   const app = createApp({
@@ -181,16 +220,18 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     userController,
     adminController,
     modelController,
+    apiKeyController,
     authenticate,
     requireAdmin,
     avatarUpload,
     modelUpload,
+    sanitizeInput,
   })
 
   return {
     config, logger, database, mailer,
     healthService, healthController,
-    auditService, authService, userService, adminService, modelService,
+    auditService, authService, userService, adminService, modelService, apiKeyService,
     app,
   }
 }

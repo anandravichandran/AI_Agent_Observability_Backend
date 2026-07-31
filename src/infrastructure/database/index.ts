@@ -15,3 +15,4 @@ export {
   type ModelVersionAttributes,
   type ModelVersionDocument,
 } from './model-version.model'
+export { ApiKeyModel, type ApiKeyAttributes, type ApiKeyDocument } from './api-key.model'

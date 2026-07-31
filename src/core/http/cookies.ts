@@ -1,6 +1,10 @@
+import crypto from 'node:crypto'
 import type { CookieOptions, Response } from 'express'
 import type { CookieConfig } from '@/config/config.types'
 import type { TokenPair } from '@/modules/auth/auth.types'
+
+/** Where the access token used to authenticate a request came from. */
+export type AccessTokenSource = 'header' | 'cookie'
 
 /**
  * Auth cookie management.
@@ -65,6 +69,7 @@ export const clearAuthCookies = (res: Response, config: CookieConfig): void => {
 
   res.clearCookie(config.accessName, { ...base, path: config.path })
   res.clearCookie(config.refreshName, { ...base, path: config.refreshPath })
+  clearCsrfCookie(res, config)
 }
 
 /**
@@ -94,18 +99,74 @@ export const readRefreshToken = (
  * Header first: an explicit bearer token is an unambiguous statement of intent,
  * whereas the cookie is ambient and travels automatically.
  */
+/** True when the Authorization header carries a non-empty bearer token. */
+const hasBearerToken = (authorizationHeader: string | undefined): boolean =>
+  Boolean(authorizationHeader?.startsWith('Bearer ') && authorizationHeader.slice(7).trim().length > 0)
+
 export const readAccessToken = (
   authorizationHeader: string | undefined,
   cookies: Record<string, unknown> | undefined,
   config: CookieConfig,
 ): string | undefined => {
-  if (authorizationHeader?.startsWith('Bearer ')) {
-    const token = authorizationHeader.slice(7).trim()
-    if (token.length > 0) return token
+  if (hasBearerToken(authorizationHeader)) {
+    return authorizationHeader?.slice(7).trim()
   }
 
   const fromCookie = cookies?.[config.accessName]
   if (typeof fromCookie === 'string' && fromCookie.length > 0) return fromCookie
 
   return undefined
+}
+
+/**
+ * Reports whether the access token actually used on this request arrived via
+ * the Authorization header or via cookie.
+ *
+ * This is the signal `csrf.middleware.ts` gates on: a bearer token cannot be
+ * attached to a request by a browser acting on a malicious page's behalf, so
+ * only the cookie path needs CSRF verification.
+ */
+export const resolveAccessTokenSource = (authorizationHeader: string | undefined): AccessTokenSource =>
+  hasBearerToken(authorizationHeader) ? 'header' : 'cookie'
+
+/**
+ * Issues the double-submit CSRF cookie.
+ *
+ * Deliberately **not** `httpOnly`: the calling client must be able to read it
+ * with JavaScript and echo it back in a request header. The security property
+ * this pattern relies on is not secrecy of the token — it is that a
+ * cross-site attacker cannot read cookies set for this origin, so they can
+ * never learn the value to put in the header themselves.
+ */
+export const issueCsrfCookie = (res: Response, config: CookieConfig): string => {
+  const token = crypto.randomBytes(32).toString('hex')
+
+  res.cookie(config.csrfName, token, {
+    httpOnly: false,
+    secure: config.secure,
+    sameSite: config.sameSite,
+    ...(config.domain ? { domain: config.domain } : {}),
+    path: config.path,
+  })
+
+  return token
+}
+
+export const clearCsrfCookie = (res: Response, config: CookieConfig): void => {
+  res.clearCookie(config.csrfName, {
+    httpOnly: false,
+    secure: config.secure,
+    sameSite: config.sameSite,
+    ...(config.domain ? { domain: config.domain } : {}),
+    path: config.path,
+  })
+}
+
+/** Reads the CSRF cookie value, for comparison against the request header. */
+export const readCsrfCookie = (
+  cookies: Record<string, unknown> | undefined,
+  config: CookieConfig,
+): string | undefined => {
+  const value = cookies?.[config.csrfName]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
 }

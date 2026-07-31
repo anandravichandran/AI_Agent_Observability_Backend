@@ -1,7 +1,7 @@
 {
   "name": "armforge-ai-backend",
-  "version": "1.3.0",
-  "description": "ArmForge AI \u2014 Backend API (Phase 4 \u2014 model upload & management).",
+  "version": "1.4.0",
+  "description": "ArmForge AI \u2014 Backend API (Phase 5 \u2014 security hardening: CSRF, API keys, device fingerprinting, geo tracking).",
   "license": "UNLICENSED",
   "private": true,
   "engines": {

@@ -45,4 +45,5 @@ export const toSessionDto = (
   lastUsedAt: session.lastUsedAt.toISOString(),
   expiresAt: session.expiresAt.toISOString(),
   current: session.id === currentSessionId,
+  geoCountry: session.geoCountry,
 })

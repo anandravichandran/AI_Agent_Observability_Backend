@@ -141,6 +141,7 @@ export const buildConfig = (env: Env = loadEnv()): AppConfig => {
     cookie: Object.freeze({
       accessName: env.COOKIE_ACCESS_NAME,
       refreshName: env.COOKIE_REFRESH_NAME,
+      csrfName: env.CSRF_COOKIE_NAME,
       ...(env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
       secure: cookieSecure,
       sameSite: env.COOKIE_SAME_SITE,
@@ -172,6 +173,26 @@ export const buildConfig = (env: Env = loadEnv()): AppConfig => {
       avatarMaxBytes: env.UPLOAD_AVATAR_MAX_BYTES,
       // URL prefix the static handler serves the upload directory under.
       publicPath: '/uploads',
+    }),
+
+    csrf: Object.freeze({
+      enabled: env.CSRF_ENABLED,
+      cookieName: env.CSRF_COOKIE_NAME,
+      headerName: env.CSRF_HEADER_NAME,
+    }),
+
+    apiKey: Object.freeze({
+      prefixLength: env.API_KEY_PREFIX_LENGTH,
+      secretBytes: env.API_KEY_SECRET_BYTES,
+    }),
+
+    deviceFingerprint: Object.freeze({
+      enabled: env.DEVICE_FINGERPRINT_ENABLED,
+      enforcement: env.DEVICE_FINGERPRINT_ENFORCEMENT,
+    }),
+
+    geo: Object.freeze({
+      enabled: env.GEO_TRACKING_ENABLED,
     }),
   })
 }

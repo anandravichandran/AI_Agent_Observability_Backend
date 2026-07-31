@@ -505,3 +505,52 @@ MODEL_UPLOAD_MAX_BYTES=5368709120   # 5 GB
 ## Not in this phase
 
 Optimization, benchmarking, inference endpoints, object-storage adapter, real-time progress (WebSocket/SSE), content-based deep validation (magic bytes enforcement beyond extension check).
+
+## Phase 5 -- Security hardening
+
+Adds CSRF protection, self-service API keys, device fingerprinting, geo tracking, and Mongo-injection sanitization on top of Phase 1-4.
+
+### New environment variables
+
+```dotenv
+CSRF_ENABLED=true
+CSRF_COOKIE_NAME=armforge_csrf
+CSRF_HEADER_NAME=x-csrf-token
+
+API_KEY_PREFIX_LENGTH=10
+API_KEY_SECRET_BYTES=32
+
+DEVICE_FINGERPRINT_ENABLED=true
+DEVICE_FINGERPRINT_ENFORCEMENT=log   # log | strict
+
+GEO_TRACKING_ENABLED=true
+```
+
+### CSRF (double-submit cookie)
+
+- `GET /api/v1/auth/csrf-token` is public and issues a non-`httpOnly` cookie plus the same token in the response body.
+- Every cookie-authenticated mutating request (state-changing verbs, not GET/HEAD/OPTIONS) must echo that token back in the `x-csrf-token` header.
+- Bearer-token callers and, in the future, API-key callers are exempt: CSRF only defends the ambient-cookie path a browser can be tricked into hitting.
+- Enforced by composing `createCsrfProtection` after JWT verification in `container.ts`'s `authenticate` guard.
+
+### API keys
+
+- New self-service module at `/api/v1/api-keys` (create, list, revoke), protected by the standard session `authenticate` guard.
+- Keys are issued once as `afk_<prefix>_<secret>`; only a SHA-256 hash is stored. The prefix is retained for fast lookup without revealing the secret.
+- Scoped via `ApiKeyScope` (`models:read`, `models:write`, `users:read`, `audit:read`, `admin:*`).
+- `createApiKeyAuthenticate` / `requireApiKeyScope` middleware exist and are ready to protect machine-to-machine routes; no route is API-key-only yet.
+
+### Device fingerprinting
+
+- A coarse fingerprint (hashed UA + accept-language + /24-or-equivalent IP) is computed on every authenticated request and stored on the session at login/refresh time.
+- On refresh, a mismatch against the session's original fingerprint is always audit-logged. With `DEVICE_FINGERPRINT_ENFORCEMENT=strict` it also rejects the refresh with `DEVICE_FINGERPRINT_MISMATCH`; the default `log` mode only records it, since UA/network drift is common for legitimate users.
+
+### Geo tracking
+
+- `LocalGeoLocationService` is a dependency-free stub that classifies an IP as private/public and is wired through `IGeoLocationService`. It is intentionally not a real MaxMind/IP2Location integration -- swap the implementation behind the interface for production geo accuracy.
+- Resolved country is stored per session and surfaced on `GET /auth/sessions`.
+
+### Input sanitization
+
+- `sanitizeInput` middleware strips Mongo operator keys (`$where`, etc.) and prototype-pollution keys (`__proto__`, `constructor`, `prototype`) from `body`/`query`/`params` before validation runs.
+- This is a targeted injection guard, not a general-purpose XSS-encoding library; output encoding remains the client's responsibility.

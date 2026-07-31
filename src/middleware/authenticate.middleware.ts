@@ -2,7 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express'
 import type { CookieConfig } from '@/config/config.types'
 import { ErrorCode } from '@/core/constants/error-codes'
 import { UnauthorizedError } from '@/core/errors/app-error'
-import { readAccessToken } from '@/core/http/cookies'
+import { readAccessToken, resolveAccessTokenSource } from '@/core/http/cookies'
 import type { ITokenService } from '@/core/security/token-service.interface'
 
 export interface AuthenticateOptions {
@@ -52,6 +52,10 @@ export const createAuthenticate = (options: AuthenticateOptions): RequestHandler
         role: claims.role,
         sessionId: claims.sid,
       }
+
+      // Recorded so `csrf.middleware.ts` can scope its check to the ambient,
+      // browser-managed cookie path and skip it for explicit bearer callers.
+      req.authTokenSource = resolveAccessTokenSource(req.get('authorization'))
 
       // Bind identity to the request logger so every downstream log line is
       // attributable without each call site having to remember to add it.

@@ -1,7 +1,7 @@
 {
   "name": "armforge-ai-backend",
-  "version": "1.1.0",
-  "description": "ArmForge AI — Autonomous AI Optimization & Benchmarking Platform for Arm. Backend API (Phase 2 — authentication).",
+  "version": "1.2.0",
+  "description": "ArmForge AI — Autonomous AI Optimization & Benchmarking Platform for Arm. Backend API (Phase 3 — user & account management).",
   "license": "UNLICENSED",
   "private": true,
   "engines": {
@@ -30,6 +30,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.2",
     "nodemailer": "^6.10.0",
     "swagger-ui-express": "^5.0.1",
     "winston": "^3.17.0",
@@ -45,6 +46,7 @@
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/morgan": "^1.9.9",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^6.4.17",
     "@types/swagger-ui-express": "^4.1.7",

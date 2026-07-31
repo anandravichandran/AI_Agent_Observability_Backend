@@ -160,5 +160,12 @@ export const buildConfig = (env: Env = loadEnv()): AppConfig => {
       from: env.MAIL_FROM,
       ...(env.MAIL_REPLY_TO ? { replyTo: env.MAIL_REPLY_TO } : {}),
     }),
+
+    upload: Object.freeze({
+      dir: env.UPLOAD_DIR,
+      avatarMaxBytes: env.UPLOAD_AVATAR_MAX_BYTES,
+      // URL prefix the static handler serves the upload directory under.
+      publicPath: '/uploads',
+    }),
   })
 }

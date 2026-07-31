@@ -163,3 +163,18 @@ export interface AppConfig {
   readonly cookie: CookieConfig
   readonly mail: MailConfig
 }
+
+export interface UploadConfig {
+  /** Directory uploads are written to, relative to the process cwd. */
+  readonly dir: string
+  /** Avatar size ceiling in bytes; enforced by the upload middleware. */
+  readonly avatarMaxBytes: number
+  /** URL prefix the static handler serves `dir` under, e.g. `/uploads`. */
+  readonly publicPath: string
+}
+
+// Declaration merging extends the AppConfig interface declared above with the
+// Phase 3 upload slice, keeping this file's single source of truth intact.
+export interface AppConfig {
+  readonly upload: UploadConfig
+}

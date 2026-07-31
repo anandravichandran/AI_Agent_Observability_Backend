@@ -39,7 +39,14 @@ export class MongooseAuditLogRepository implements IAuditLogRepository {
   public async query(query: AuditQuery): Promise<AuditQueryResult> {
     const filter: FilterQuery<AuditLogAttributes> = {}
 
-    if (query.action) filter.action = query.action
+    // An explicit action list wins over a single action; both beat nothing.
+    if (query.actions && query.actions.length > 0) {
+      filter.action = { $in: [...query.actions] }
+    } else if (query.action) {
+      filter.action = query.action
+    }
+
+    if (query.category) filter.category = query.category
     if (query.outcome) filter.outcome = query.outcome
 
     if (query.actorId && Types.ObjectId.isValid(query.actorId)) {

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import express, { type Express, type RequestHandler } from 'express'
 import cookieParser from 'cookie-parser'
 import type { AppConfig } from '@/config/config.types'
@@ -19,6 +20,8 @@ import { createApiV1Router } from '@/routes'
 import type { HealthController } from '@/modules/health/health.controller'
 import type { AuthController } from '@/modules/auth/auth.controller'
 import type { AuditController } from '@/modules/audit/audit.controller'
+import type { UserController } from '@/modules/users/user.controller'
+import type { AdminController } from '@/modules/admin/admin.controller'
 
 export interface CreateAppDependencies {
   readonly config: AppConfig
@@ -26,10 +29,14 @@ export interface CreateAppDependencies {
   readonly healthController: HealthController
   readonly authController: AuthController
   readonly auditController: AuditController
+  readonly userController: UserController
+  readonly adminController: AdminController
   /** Access-token guard, pre-bound to the token service and cookie config. */
   readonly authenticate: RequestHandler
   /** Role gate bound to `admin`. */
   readonly requireAdmin: RequestHandler
+  /** Single-file avatar parser, pre-bound to the configured size limit. */
+  readonly avatarUpload: RequestHandler
 }
 
 /**
@@ -49,12 +56,13 @@ export interface CreateAppDependencies {
  *  5. compression        — wraps the response writer before handlers run
  *  6. body parsers       — malformed JSON surfaces in the error handler
  *  7. cookie parser      — must precede any middleware reading `req.cookies`
- *  8. response formatter — installs `res.success()` for all handlers
- *  9. access logging     — after the id exists, before routing
- * 10. rate limiting      — rejects excess load before real work begins
- * 11. routes             — the application itself
- * 12. 404                — anything unmatched
- * 13. error handler      — always last; Express requires it after all routes
+ *  8. static uploads     — public avatar files; outside the API rate limit
+ *  9. response formatter — installs `res.success()` for all handlers
+ * 10. access logging     — after the id exists, before routing
+ * 11. rate limiting      — rejects excess load before real work begins
+ * 12. routes             — the application itself
+ * 13. 404                — anything unmatched
+ * 14. error handler      — always last; Express requires it after all routes
  */
 export const createApp = ({
   config,
@@ -62,15 +70,17 @@ export const createApp = ({
   healthController,
   authController,
   auditController,
+  userController,
+  adminController,
   authenticate,
   requireAdmin,
+  avatarUpload,
 }: CreateAppDependencies): Express => {
   const app = express()
 
   // 1. Proxy awareness. Required for accurate client IPs behind a load
   //    balancer, which rate limiting, access logs, and the audit trail all
-  //    depend on. A wrong value here means every request appears to originate
-  //    from the proxy, collapsing per-IP rate limits into one shared bucket.
+  //    depend on.
   app.set('trust proxy', config.http.trustProxy)
   app.disable('x-powered-by')
   app.set('etag', 'strong')
@@ -90,18 +100,36 @@ export const createApp = ({
   app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }))
 
   // 7. Cookie parsing. Must sit ahead of `authenticate`, which reads the
-  //    access token from `req.cookies`; without it that object is undefined
-  //    and every cookie-authenticated request silently falls back to
-  //    “no token supplied”.
+  //    access token from `req.cookies`.
   app.use(cookieParser())
 
-  // 8. Envelope helpers on the response object.
+  // 8. Static avatar files.
+  //
+  //    Served outside the API base path so they skip the API rate limiter, and
+  //    mounted before the response formatter because a file is not an envelope.
+  //    Helmet sets `Cross-Origin-Resource-Policy: same-origin` globally, which
+  //    would block the web client (a different origin) from embedding an avatar
+  //    in an `<img>` tag — so the static handler deliberately relaxes that one
+  //    header for these public, non-sensitive images.
+  app.use(
+    config.upload.publicPath,
+    express.static(path.resolve(process.cwd(), config.upload.dir), {
+      index: false,
+      fallthrough: true,
+      maxAge: '7d',
+      setHeaders: (res) => {
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+      },
+    }),
+  )
+
+  // 9. Envelope helpers on the response object.
   app.use(createResponseFormatter(config.http.version))
 
-  // 9. HTTP access logging.
+  // 10. HTTP access logging.
   app.use(createHttpLoggerMiddleware(logger, config.app))
 
-  // 10. Baseline rate limiting, scoped to the API surface so docs stay
+  // 11. Baseline rate limiting, scoped to the API surface so docs stay
   //     reachable. Credential endpoints layer a much tighter budget on top.
   app.use(config.http.basePath, createRateLimiter(config.rateLimit))
 
@@ -109,10 +137,7 @@ export const createApp = ({
    * Stricter limiter for credential and OTP endpoints.
    *
    * The general budget (300 per 15 minutes) is far too generous for a login
-   * form: it would allow thousands of password guesses a day per address. This
-   * one is deliberately small, and it is what makes a 6-digit OTP defensible —
-   * 20 attempts per window against a million-value keyspace is not a viable
-   * guessing attack.
+   * form: it would allow thousands of password guesses a day per address.
    */
   const credentialLimiter = createRateLimiter(config.rateLimit, {
     windowMs: config.rateLimit.authWindowMs,
@@ -120,24 +145,26 @@ export const createApp = ({
     skipObservabilityPaths: false,
   })
 
-  // 11a. API documentation.
+  // 12a. API documentation.
   mountSwagger(app, config, logger)
 
-  // 11b. Versioned API surface.
+  // 12b. Versioned API surface.
   app.use(
     config.http.basePath,
     createApiV1Router({
       healthController,
       authController,
       auditController,
+      userController,
+      adminController,
       credentialLimiter,
       authenticate,
       requireAdmin,
+      avatarUpload,
     }),
   )
 
-  // 11c. Root convenience endpoint — a bare GET / should not 404 for an
-  //      operator or an uptime checker pointed at the origin.
+  // 12c. Root convenience endpoint.
   app.get('/', (_req, res) => {
     res.success(
       {
@@ -149,15 +176,16 @@ export const createApp = ({
           : null,
         health: `${config.http.basePath}/health`,
         authentication: `${config.http.basePath}/auth`,
+        account: `${config.http.basePath}/users`,
       },
       `${config.app.title} is running.`,
     )
   })
 
-  // 12. Unmatched routes.
+  // 13. Unmatched routes.
   app.use(createNotFoundHandler())
 
-  // 13. Terminal error handler.
+  // 14. Terminal error handler.
   app.use(createErrorHandler(logger as ILogger, config.app))
 
   return app

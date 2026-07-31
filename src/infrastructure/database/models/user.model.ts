@@ -32,6 +32,23 @@ export interface UserAttributes {
   failedLoginAttempts: number
   lockedUntil?: Date | null
   passwordChangedAt?: Date | null
+  /** Public path to the uploaded avatar, e.g. `/uploads/avatars/<id>.webp`. */
+  avatarUrl?: string | null
+  preferences: {
+    theme: 'light' | 'dark' | 'system'
+  }
+  notifications: {
+    productUpdates: boolean
+    securityAlerts: boolean
+    benchmarkResults: boolean
+    weeklyDigest: boolean
+  }
+  /**
+   * Soft-delete tombstone. Present (non-null) means the account is deleted;
+   * queries for active users must exclude it. Kept rather than hard-deleted so
+   * the audit trail and referential integrity survive account closure.
+   */
+  deletedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -100,6 +117,29 @@ const userSchema = new Schema<UserAttributes>(
     },
     lockedUntil: { type: Date, default: null },
     passwordChangedAt: { type: Date, default: null },
+    avatarUrl: { type: String, default: null },
+
+    preferences: {
+      theme: {
+        type: String,
+        enum: {
+          values: ['light', 'dark', 'system'],
+          message: '`{VALUE}` is not a supported theme',
+        },
+        default: 'system',
+      },
+    },
+
+    notifications: {
+      productUpdates: { type: Boolean, default: true },
+      // Forced true on every write in the service layer; the default here only
+      // covers first creation. See user.constants for why it cannot be disabled.
+      securityAlerts: { type: Boolean, default: true },
+      benchmarkResults: { type: Boolean, default: true },
+      weeklyDigest: { type: Boolean, default: false },
+    },
+
+    deletedAt: { type: Date, default: null, index: true },
   },
   {
     timestamps: true,
@@ -131,5 +171,11 @@ userSchema.virtual('fullName').get(function (this: UserAttributes): string {
  * listing filtered by status and recency.
  */
 userSchema.index({ status: 1, createdAt: -1 })
+
+/**
+ * Backs the admin user-list filter combination. Sorting by `createdAt`
+ * descending over a role+status filter uses this rather than a collection scan.
+ */
+userSchema.index({ role: 1, status: 1, createdAt: -1 })
 
 export const UserModel: Model<UserAttributes> = model<UserAttributes>('User', userSchema)

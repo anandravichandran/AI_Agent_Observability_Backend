@@ -1,3 +1,3 @@
-export * from './openapi.schemas'
-export * from './openapi.document'
-export * from './swagger'
+export { buildOpenApiDocument } from './openapi.document'
+export { componentSchemas } from './openapi.schemas'
+export { mountSwagger } from './swagger'

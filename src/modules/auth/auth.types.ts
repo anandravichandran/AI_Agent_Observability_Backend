@@ -166,10 +166,3 @@ export interface ResetPasswordInput {
   readonly code: string
   readonly password: string
 }
-
-/**
- * Alias used at the controller boundary, where the purpose arrives as a
- * validated string from the Zod enum and needs narrowing back to the domain
- * union before it reaches the service.
- */
-export type OtpPurposeInput = OtpPurposeValue

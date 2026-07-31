@@ -305,230 +305,99 @@ A horizontally scaled deployment should replace the rate limiter's in-memory sto
 
 ---
 
-# Phase 2 — Authentication & Identity
+# Phase 3 — Account, Profile & Administration
 
-Phase 2 adds the identity layer on top of the Phase 1 foundation. Nothing from
-Phase 1 was rewritten; the middleware chain gained one step, the router gained
-two mounts, and the container gained a subgraph.
+Phase 3 adds the self-service account surface and administrator user management
+on top of the Phase 2 identity layer. Nothing from earlier phases was rewritten;
+the router gained two mounts, the container gained avatar storage plus two
+services, and the user schema gained profile fields.
 
-## Endpoints
+## Self-service endpoints
 
-All paths are relative to `/api/v1`.
+All paths are relative to `/api/v1`. Every id on this surface comes from the
+verified access token — never from the URL — which is the IDOR invariant.
 
-| Method | Path | Auth | Purpose |
-| --- | --- | --- | --- |
-| POST | `/auth/register` | — | Create a pending account, email a verification code |
-| POST | `/auth/verify-email` | — | Consume the OTP, activate the account, sign in |
-| POST | `/auth/resend-otp` | — | Re-issue a code (subject to cooldown) |
-| POST | `/auth/login` | — | Exchange credentials for a token pair |
-| POST | `/auth/refresh` | refresh token | Rotate the refresh token |
-| POST | `/auth/logout` | refresh token | Revoke this session |
-| POST | `/auth/logout-all` | access token | Revoke every session |
-| POST | `/auth/forgot-password` | — | Email a reset code |
-| POST | `/auth/reset-password` | — | Set a new password, revoke all sessions |
-| GET | `/auth/me` | access token | Current profile |
-| GET | `/auth/sessions` | access token | List active sessions |
-| GET | `/admin/audit-logs` | access token + `admin` | Query the audit trail |
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/users/profile` | Full profile (avatar, preferences, notifications) |
+| PATCH | `/users/profile` | Update first/last name |
+| POST | `/users/password` | Change password (other devices signed out) |
+| DELETE | `/users/account` | Soft-delete account (password required) |
+| PUT | `/users/avatar` | Upload avatar (`multipart/form-data`, field `avatar`) |
+| DELETE | `/users/avatar` | Remove avatar |
+| PATCH | `/users/preferences` | Update theme (`light` / `dark` / `system`) |
+| PATCH | `/users/notifications` | Update notification toggles |
+| GET | `/users/devices` | List signed-in devices (parsed UA) |
+| DELETE | `/users/devices/:id` | Sign out one device |
+| GET | `/users/login-history` | Paginated login history |
+| GET | `/users/activity` | Paginated account activity feed |
 
-## Token model
+## Administration endpoints
 
-Two tokens, deliberately asymmetric:
+All require the `admin` role.
 
-- **Access token** — 15 minutes, stateless, carries `sub`, `email`, `role`, and
-  `sid`. Verified by signature alone; `authenticate` performs **no database
-  read**, which is what keeps authenticated requests cheap.
-- **Refresh token** — 7 days, stateful, single-use. Only its SHA-256 hash is
-  stored, so a leaked database dump yields no usable tokens.
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/admin/audit-logs` | Query the security audit trail |
+| GET | `/admin/users` | List users (search, filter, sort, page) |
+| GET | `/admin/users/:id` | User detail + active session count |
+| PATCH | `/admin/users/:id/role` | Change role (revokes all sessions) |
+| PATCH | `/admin/users/:id/status` | Suspend / reactivate |
+| GET | `/admin/users/:id/sessions` | List a user's devices |
+| DELETE | `/admin/users/:id/sessions` | Revoke every session |
 
-The short access-token lifetime is the trade for skipping the database check: a
-revoked user stays authenticated for at most one token period, and every
-refresh re-validates them against the store.
+### Privilege rules
 
-Secrets are separate for the two token types and must differ. Signing both with
-one key would let an access token be presented as a refresh token; the `type`
-claim is checked on verification as a second line of defence, and `HS256` is
-pinned explicitly so a forged `alg: none` header is rejected.
+Two rules live in the service, above the route gate:
 
-## Refresh token rotation
+1. An admin cannot change their **own** role or status through this surface.
+2. An admin cannot modify **another** administrator. There is no super-admin tier.
 
-Each issued refresh token is one `sessions` document. Rotation inserts a
-successor sharing the predecessor's `familyId` and marks the predecessor
-`revoked`, linked forward via `replacedBySessionId`.
+## Pagination, filtering, searching, sorting
 
-```
-login ──> S1 (active, family F)
-           │ refresh
-           ├──> S1 revoked:rotated ──> S2 (active, family F)
-           │                            │ refresh
-           │                            ├──> S2 revoked:rotated ──> S3 (active, family F)
-```
+Shared plumbing lives in `src/core/http/pagination.ts`.
 
-Revoked rows are **retained until their TTL expires** rather than deleted, and
-that is the entire point of the design. A legitimate client never presents the
-same refresh token twice, so a hit on a revoked row means the token leaked:
+- **Pagination:** `page` (default 1) and `limit` (default 20, max 100).
+- **Search (admin list):** case-insensitive substring on email, first name, last name. Regex metacharacters are escaped so user input is never a ReDoS vector.
+- **Filter:** `role`, `status`, `outcome`, `action`, date range (`from`/`to`).
+- **Sort:** whitelist only (`createdAt`, `updatedAt`, `email`, `firstName`, `lastName`, `lastLoginAt`, `role`, `status`). Anything else falls back to `createdAt desc`.
 
-```
-attacker replays S1 ──> row found, already revoked
-                    ──> revokeFamily(F, 'reuse_detected')
-                    ──> S3 dies too; both parties must re-authenticate
-```
+List responses put the page of items in `data` and the standard
+`pagination` block on the envelope (`page`, `pageSize`, `total`, `pageCount`,
+`hasNext`, `hasPrevious`).
 
-There is no way to tell the thief from the victim at that moment, so both are
-signed out. Briefly inconveniencing the real user is the correct trade against
-leaving an attacker holding a live session.
+## Avatar storage
 
-Sessions are also revoked when the password changes, when the account is
-suspended, and when the concurrent-session cap is exceeded (oldest first).
+- Port: `IAvatarStorage` — swap local disk for S3 without touching the service.
+- Adapter: `LocalAvatarStorage` writes `<UPLOAD_DIR>/avatars/<userId>.<ext>`.
+- Served at `/uploads/...` outside the API rate limiter, with
+  `Cross-Origin-Resource-Policy: cross-origin` so the web client can embed them.
+- MIME allow-list: PNG, JPEG, WebP. Size ceiling: `UPLOAD_AVATAR_MAX_BYTES`
+  (default 2 MB).
+- Deep content validation (is the byte stream actually an image?) is a known
+  hardening gap for a local deployment and is called out intentionally.
 
-## One-time codes
+## Soft delete
 
-- Generated with `crypto.randomInt` — not `Math.random`, whose output is
-  predictable from a handful of observed values.
-- Stored as HMAC-SHA256 with a server-side pepper, never in plaintext. A
-  database reader cannot mint a verification.
-- Compared with `timingSafeEqual`.
-- TTL enforced in the document *and* by a MongoDB TTL index, so expired codes
-  disappear even if the application never looks at them again.
-- Attempt-capped. The counter increments **before** comparison, so a dropped
-  connection mid-verification cannot buy a free retry. On exhaustion the code is
-  consumed outright rather than merely rejected.
-- Issuing a new code invalidates outstanding ones for the same purpose, so a
-  resend never multiplies the guessing surface.
+`DELETE /users/account` stamps `deletedAt`, anonymises the email to
+`deleted+<id>@deleted.invalid` so the address can be re-registered, clears the
+avatar, and revokes every session. The row is retained so the audit trail stays
+resolvable. Admin listings exclude deleted accounts.
 
-## Cookies
+## Notification settings
 
-Both tokens are set as `HttpOnly` cookies, which is what puts them out of reach
-of XSS — a token in `localStorage` is readable by any injected script.
-
-| Attribute | Value |
-| --- | --- |
-| `httpOnly` | always `true` |
-| `secure` | forced `true` in production, or whenever `SameSite=None` |
-| `sameSite` | `lax` by default |
-| access cookie path | `/` |
-| refresh cookie path | `/api/v1/auth` |
-
-The refresh cookie is scoped to the auth path so it is not attached to ordinary
-API calls. A credential that travels on every request is a credential exposed on
-every request.
-
-The token pair is also returned in the response body — browsers should ignore
-it; it exists for CLI and CI clients with no cookie jar.
-
-## Role-based authorization
-
-`viewer (1) < engineer (2) < admin (3)`. New accounts are always `engineer`;
-the role is hardcoded at registration and the strict Zod schema rejects an
-unexpected `role` field, so self-service signup cannot mint an administrator.
-
-Three guards are available: `requireRoles` (exact membership),
-`requireMinimumRole` (rank threshold), and `requireSelfOrRole` (own resource, or
-privileged). `authenticate` must always run first — the role check reads
-`req.user`.
-
-## Audit logging
-
-Append-only. Every authentication event is recorded with actor, IP, user agent,
-and the request id that ties it back to the access log.
-
-Two properties matter. Writes **never** throw: a failed audit insert must not
-fail the user's login. And payloads are recursively redacted — passwords, codes,
-tokens, cookies, and `Authorization` headers are replaced before they reach the
-collection, because a log that captures credentials is a second, less protected
-copy of the credential store.
-
-## Anti-enumeration & timing
-
-- Unknown address and wrong password return an identical 401 body and code.
-- Login hashes a throwaway password when the address is unknown, so the response
-  time does not reveal which addresses exist.
-- `forgot-password` always returns 200 with the same shape; even a cooldown
-  violation is swallowed rather than surfaced, since "slow down" would itself
-  confirm the account.
-- Email-verification state is checked *after* the password comparison.
-
-## Account protection
-
-Failed logins increment atomically via `$inc`; after `AUTH_MAX_FAILED_LOGIN_ATTEMPTS`
-the account locks for `AUTH_LOCK_DURATION_MS`. The lock is checked before bcrypt
-runs, so a locked account costs an attacker a cheap read instead of a full hash.
-Credential and OTP endpoints sit behind a tighter rate limiter (20 per 15
-minutes) than the general API budget of 300.
-
-## Schemas
-
-| Collection | Notes |
-| --- | --- |
-| `users` | unique `email`; `passwordHash` is `select: false` so it cannot leak by accident |
-| `otps` | TTL on `expiresAt`; `codeHash` is `select: false` |
-| `sessions` | unique `tokenHash`; TTL on `expiresAt`; indexed by `{userId, revokedAt, createdAt}` |
-| `audit_logs` | `createdAt` only — audit rows are never updated |
-
-`UserWithSecret` is a distinct type from `UserEntity`, so returning a password
-hash from a method that promises a plain user is a **compile error** rather than
-a code-review catch.
+`securityAlerts` cannot be disabled. The Zod schema rejects the field on input,
+and the service forces it back to `true` on every write — belt and braces.
 
 ## New environment variables
 
 ```dotenv
-JWT_ACCESS_SECRET=            # required in production, min 32 chars
-JWT_REFRESH_SECRET=           # required in production, must differ from above
-JWT_ACCESS_TTL=15m
-JWT_REFRESH_TTL=7d
-JWT_ISSUER=armforge-ai
-JWT_AUDIENCE=armforge-ai-clients
-
-BCRYPT_SALT_ROUNDS=12
-AUTH_MAX_FAILED_LOGIN_ATTEMPTS=5
-AUTH_LOCK_DURATION_MS=900000
-AUTH_MAX_ACTIVE_SESSIONS=5
-AUTH_RATE_LIMIT_WINDOW_MS=900000
-AUTH_RATE_LIMIT_MAX=20
-
-OTP_LENGTH=6
-OTP_TTL_MS=600000
-OTP_MAX_ATTEMPTS=5
-OTP_RESEND_COOLDOWN_MS=60000
-
-COOKIE_ACCESS_NAME=armforge_access
-COOKIE_REFRESH_NAME=armforge_refresh
-COOKIE_SECURE=false
-COOKIE_SAME_SITE=lax
-
-MAIL_TRANSPORT=stream         # 'stream' prints to the log; 'smtp' in production
-SMTP_HOST=
-SMTP_PORT=587
-MAIL_FROM="ArmForge AI <no-reply@armforge.ai>"
-APP_WEB_URL=http://localhost:3000
-```
-
-Startup validation refuses to boot a production process with missing or short
-JWT secrets, identical access and refresh secrets, `SameSite=None` without
-`Secure`, wildcard CORS with credentials enabled, or the stream mail transport.
-Fail at boot, not at 3 a.m.
-
-In development, `MAIL_TRANSPORT=stream` writes the full message to the log, so
-OTP flows are testable with no SMTP server.
-
-## Quick walkthrough
-
-```bash
-curl -X POST localhost:8080/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"ada@armforge.ai","password":"Str0ng!Passphrase","firstName":"Ada","lastName":"Lovelace"}'
-
-# copy the 6-digit code from the application log
-curl -X POST localhost:8080/api/v1/auth/verify-email -c jar.txt \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"ada@armforge.ai","code":"481920"}'
-
-curl localhost:8080/api/v1/auth/me -b jar.txt
-curl -X POST localhost:8080/api/v1/auth/refresh -b jar.txt -c jar.txt
+UPLOAD_DIR=uploads
+UPLOAD_AVATAR_MAX_BYTES=2097152
 ```
 
 ## Not in this phase
 
-Optimization, benchmarking, and model endpoints; OAuth/SSO; TOTP or WebAuthn
-MFA; admin user management; a shared rate-limit store for horizontal scaling
-(the limiter is in-memory and expects a Redis store before running multiple
-instances).
+Optimization / benchmark / model endpoints, OAuth/SSO, MFA beyond email OTP,
+image-content deep validation, and a shared object-store adapter for multi-instance
+avatar storage.

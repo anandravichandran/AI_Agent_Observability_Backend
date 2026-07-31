@@ -23,6 +23,21 @@ export const AuditAction = {
   PASSWORD_FORGOT: 'auth.password.forgot',
   PASSWORD_RESET: 'auth.password.reset',
   ACCESS_DENIED: 'auth.access.denied',
+
+  // --- Account (Phase 3) ----------------------------------------------------
+  PROFILE_UPDATE: 'account.profile.update',
+  PASSWORD_CHANGE: 'account.password.change',
+  ACCOUNT_DELETE: 'account.delete',
+  AVATAR_UPDATE: 'account.avatar.update',
+  PREFERENCES_UPDATE: 'account.preferences.update',
+  NOTIFICATIONS_UPDATE: 'account.notifications.update',
+  SESSION_REVOKE: 'account.session.revoke',
+
+  // --- Administration (Phase 3) ----------------------------------------------
+  ADMIN_USER_VIEW: 'admin.user.view',
+  ADMIN_ROLE_CHANGE: 'admin.user.role_change',
+  ADMIN_STATUS_CHANGE: 'admin.user.status_change',
+  ADMIN_SESSION_REVOKE: 'admin.user.session_revoke',
 } as const
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction]
@@ -32,6 +47,7 @@ export const AuditCategory = {
   AUTHORIZATION: 'authorization',
   ACCOUNT: 'account',
   SECURITY: 'security',
+  ADMINISTRATION: 'administration',
 } as const
 
 export type AuditCategoryValue = (typeof AuditCategory)[keyof typeof AuditCategory]
@@ -73,7 +89,12 @@ export interface AuditLogEntity {
 }
 
 export interface AuditQuery {
+  /** Exact action match. Mutually exclusive with `actions`. */
   readonly action?: string
+  /** Matches any of several actions — used to build a filtered feed. */
+  readonly actions?: readonly string[]
+  /** Prefix match on category, e.g. `authentication`. */
+  readonly category?: string
   readonly actorId?: string
   readonly outcome?: AuditOutcome
   readonly from?: Date

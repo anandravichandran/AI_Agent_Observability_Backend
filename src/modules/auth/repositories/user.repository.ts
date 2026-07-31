@@ -1,14 +1,22 @@
-import { Types, type Model } from 'mongoose'
+import { Types, type FilterQuery, type Model } from 'mongoose'
 import { UserModel } from '@/infrastructure/database/models/user.model'
 import type { UserAttributes, UserDocument } from '@/infrastructure/database/models/user.model'
+import { toSortDocument, toSkip } from '@/core/http/pagination'
 import { UserStatus } from '../auth.constants'
 import type {
   CreateUserData,
   LoginFailureState,
   UserEntity,
+  UserNotificationsData,
+  UserPreferencesData,
   UserWithSecret,
 } from '../auth.entities'
-import type { IUserRepository } from './user.repository.interface'
+import type {
+  IUserRepository,
+  UpdateProfileData,
+  UserListQuery,
+  UserListResult,
+} from './user.repository.interface'
 
 /**
  * Mongoose adapter for {@link IUserRepository}.
@@ -149,9 +157,6 @@ export class MongooseUserRepository implements IUserRepository {
       return { failedLoginAttempts: attempts, lockedUntil: null, isLocked: false }
     }
 
-    // Threshold reached: apply the lock in a second write. Split from the
-    // increment so the lock window always starts at the moment of the final
-    // attempt, rather than being computed from a stale read.
     const lockedUntil = new Date(Date.now() + lockDurationMs)
 
     await this.model.updateOne({ _id: id }, { $set: { lockedUntil } }).exec()
@@ -163,6 +168,146 @@ export class MongooseUserRepository implements IUserRepository {
     await this.model
       .updateOne({ _id: id }, { $set: { failedLoginAttempts: 0, lockedUntil: null } })
       .exec()
+  }
+
+  // -------------------------------------------------------------------------
+  // Profile & account
+  // -------------------------------------------------------------------------
+
+  public async updateProfile(
+    id: string,
+    data: UpdateProfileData,
+  ): Promise<UserEntity | null> {
+    if (!Types.ObjectId.isValid(id)) return null
+
+    const $set: Record<string, unknown> = {}
+    if (data.firstName !== undefined) $set['firstName'] = data.firstName
+    if (data.lastName !== undefined) $set['lastName'] = data.lastName
+
+    if (Object.keys($set).length === 0) {
+      return this.findById(id)
+    }
+
+    const doc = await this.model.findByIdAndUpdate(id, { $set }, { new: true }).exec()
+    return doc ? this.toEntity(doc) : null
+  }
+
+  public async updatePreferences(
+    id: string,
+    preferences: UserPreferencesData,
+  ): Promise<UserEntity | null> {
+    if (!Types.ObjectId.isValid(id)) return null
+
+    const doc = await this.model
+      .findByIdAndUpdate(id, { $set: { 'preferences.theme': preferences.theme } }, { new: true })
+      .exec()
+
+    return doc ? this.toEntity(doc) : null
+  }
+
+  public async updateNotifications(
+    id: string,
+    notifications: UserNotificationsData,
+  ): Promise<UserEntity | null> {
+    if (!Types.ObjectId.isValid(id)) return null
+
+    // Whitelisted dot-path update rather than a wholesale `$set` of the
+    // sub-document, so a partial patch cannot clobber a sibling toggle.
+    const $set: Record<string, unknown> = {
+      'notifications.productUpdates': notifications.productUpdates,
+      'notifications.securityAlerts': notifications.securityAlerts,
+      'notifications.benchmarkResults': notifications.benchmarkResults,
+      'notifications.weeklyDigest': notifications.weeklyDigest,
+    }
+
+    const doc = await this.model.findByIdAndUpdate(id, { $set }, { new: true }).exec()
+    return doc ? this.toEntity(doc) : null
+  }
+
+  public async setAvatar(id: string, avatarUrl: string | null): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) return
+
+    await this.model.updateOne({ _id: id }, { $set: { avatarUrl } }).exec()
+  }
+
+  public async softDelete(id: string): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) return
+
+    // Anonymise the email so the address can be re-registered while the row is
+    // retained for referential integrity. The original is not recoverable from
+    // this document — that is the point of a deletion, not a suspension.
+    const anonymised = `deleted+${id}@deleted.invalid`
+
+    await this.model
+      .updateOne(
+        { _id: id },
+        {
+          $set: {
+            deletedAt: new Date(),
+            email: anonymised,
+            avatarUrl: null,
+            status: UserStatus.SUSPENDED,
+            isEmailVerified: false,
+          },
+        },
+      )
+      .exec()
+  }
+
+  public async updateRole(id: string, role: UserEntity['role']): Promise<UserEntity | null> {
+    if (!Types.ObjectId.isValid(id)) return null
+
+    const doc = await this.model
+      .findByIdAndUpdate(id, { $set: { role } }, { new: true })
+      .exec()
+
+    return doc ? this.toEntity(doc) : null
+  }
+
+  public async updateStatus(
+    id: string,
+    status: UserEntity['status'],
+  ): Promise<UserEntity | null> {
+    if (!Types.ObjectId.isValid(id)) return null
+
+    const doc = await this.model
+      .findByIdAndUpdate(id, { $set: { status } }, { new: true })
+      .exec()
+
+    return doc ? this.toEntity(doc) : null
+  }
+
+  public async findMany(query: UserListQuery): Promise<UserListResult> {
+    const filter: FilterQuery<UserAttributes> = { deletedAt: null }
+
+    if (query.role) filter.role = query.role
+    if (query.status) filter.status = query.status
+
+    if (query.search) {
+      // Escape regex metacharacters so user input is treated as a literal
+      // substring, never as a pattern. Without this a crafted query is a ReDoS
+      // vector and can match far more than intended.
+      const escaped = query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const pattern = new RegExp(escaped, 'i')
+
+      filter.$or = [
+        { email: pattern },
+        { firstName: pattern },
+        { lastName: pattern },
+      ]
+    }
+
+    const [docs, total] = await Promise.all([
+      this.model
+        .find(filter)
+        .sort(toSortDocument(query.sort))
+        .skip(toSkip(query))
+        .limit(query.limit)
+        .exec(),
+      this.model.countDocuments(filter).exec(),
+    ])
+
+    return { items: docs.map((doc) => this.toEntity(doc)), total }
   }
 
   // -------------------------------------------------------------------------
@@ -184,9 +329,19 @@ export class MongooseUserRepository implements IUserRepository {
       isEmailVerified: doc.isEmailVerified,
       emailVerifiedAt: doc.emailVerifiedAt ?? null,
       lastLoginAt: doc.lastLoginAt ?? null,
+      lastLoginIp: doc.lastLoginIp ?? null,
       failedLoginAttempts: doc.failedLoginAttempts,
       lockedUntil: doc.lockedUntil ?? null,
       passwordChangedAt: doc.passwordChangedAt ?? null,
+      avatarUrl: doc.avatarUrl ?? null,
+      preferences: { theme: doc.preferences?.theme ?? 'system' },
+      notifications: {
+        productUpdates: doc.notifications?.productUpdates ?? true,
+        securityAlerts: doc.notifications?.securityAlerts ?? true,
+        benchmarkResults: doc.notifications?.benchmarkResults ?? true,
+        weeklyDigest: doc.notifications?.weeklyDigest ?? false,
+      },
+      deletedAt: doc.deletedAt ?? null,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     }

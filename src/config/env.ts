@@ -157,6 +157,14 @@ const envSchema = z
     SMTP_PASSWORD: optionalString,
     MAIL_FROM: z.string().min(1).default('ArmForge AI <no-reply@armforge.ai>'),
     MAIL_REPLY_TO: optionalString,
+
+    // --- Uploads -------------------------------------------------------------
+    UPLOAD_DIR: z.string().min(1).default('uploads'),
+    UPLOAD_AVATAR_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1024)
+      .default(2 * 1024 * 1024),
   })
   .superRefine((env, ctx) => {
     if (env.MONGO_MIN_POOL_SIZE > env.MONGO_MAX_POOL_SIZE) {

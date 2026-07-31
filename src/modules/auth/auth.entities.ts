@@ -14,6 +14,19 @@ import type {
  * the services, controllers, or tests that depend on the ports.
  */
 
+/** Persisted shape of the preferences sub-document. */
+export interface UserPreferencesData {
+  readonly theme: 'light' | 'dark' | 'system'
+}
+
+/** Persisted shape of the notification-settings sub-document. */
+export interface UserNotificationsData {
+  readonly productUpdates: boolean
+  readonly securityAlerts: boolean
+  readonly benchmarkResults: boolean
+  readonly weeklyDigest: boolean
+}
+
 export interface UserEntity {
   readonly id: string
   readonly email: string
@@ -24,9 +37,15 @@ export interface UserEntity {
   readonly isEmailVerified: boolean
   readonly emailVerifiedAt: Date | null
   readonly lastLoginAt: Date | null
+  readonly lastLoginIp: string | null
   readonly failedLoginAttempts: number
   readonly lockedUntil: Date | null
   readonly passwordChangedAt: Date | null
+  readonly avatarUrl: string | null
+  readonly preferences: UserPreferencesData
+  readonly notifications: UserNotificationsData
+  /** Soft-delete tombstone. Non-null means the account is deleted. */
+  readonly deletedAt: Date | null
   readonly createdAt: Date
   readonly updatedAt: Date
 }
@@ -35,7 +54,7 @@ export interface UserEntity {
  * A user together with the credential hash.
  *
  * Separate from `UserEntity` on purpose: the hash is `select: false` in the
- * schema and is only ever loaded by the two call sites that verify a password.
+ * schema and is only ever loaded by the call sites that verify a password.
  * Making it a distinct type means an accidental leak into a response DTO is a
  * compile error, not a runtime incident.
  */

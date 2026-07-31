@@ -1,7 +1,7 @@
 {
   "name": "armforge-ai-backend",
-  "version": "1.2.0",
-  "description": "ArmForge AI — Autonomous AI Optimization & Benchmarking Platform for Arm. Backend API (Phase 3 — user & account management).",
+  "version": "1.3.0",
+  "description": "ArmForge AI \u2014 Backend API (Phase 4 \u2014 model upload & management).",
   "license": "UNLICENSED",
   "private": true,
   "engines": {

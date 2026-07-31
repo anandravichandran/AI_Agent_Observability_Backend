@@ -22,6 +22,7 @@ import type { AuthController } from '@/modules/auth/auth.controller'
 import type { AuditController } from '@/modules/audit/audit.controller'
 import type { UserController } from '@/modules/users/user.controller'
 import type { AdminController } from '@/modules/admin/admin.controller'
+import type { ModelController } from '@/modules/models/model.controller'
 
 export interface CreateAppDependencies {
   readonly config: AppConfig
@@ -37,6 +38,9 @@ export interface CreateAppDependencies {
   readonly requireAdmin: RequestHandler
   /** Single-file avatar parser, pre-bound to the configured size limit. */
   readonly avatarUpload: RequestHandler
+  readonly modelController: ModelController
+  /** Model file upload middleware (disk-buffered). */
+  readonly modelUpload: RequestHandler
 }
 
 /**
@@ -75,6 +79,8 @@ export const createApp = ({
   authenticate,
   requireAdmin,
   avatarUpload,
+  modelController,
+  modelUpload,
 }: CreateAppDependencies): Express => {
   const app = express()
 
@@ -161,6 +167,8 @@ export const createApp = ({
       authenticate,
       requireAdmin,
       avatarUpload,
+      modelController,
+      modelUpload,
     }),
   )
 

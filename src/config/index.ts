@@ -161,6 +161,12 @@ export const buildConfig = (env: Env = loadEnv()): AppConfig => {
       ...(env.MAIL_REPLY_TO ? { replyTo: env.MAIL_REPLY_TO } : {}),
     }),
 
+    modelUpload: Object.freeze({
+      dir: env.MODEL_UPLOAD_DIR,
+      tempDir: env.MODEL_UPLOAD_TEMP_DIR,
+      maxBytes: env.MODEL_UPLOAD_MAX_BYTES,
+    }),
+
     upload: Object.freeze({
       dir: env.UPLOAD_DIR,
       avatarMaxBytes: env.UPLOAD_AVATAR_MAX_BYTES,

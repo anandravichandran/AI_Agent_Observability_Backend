@@ -178,3 +178,17 @@ export interface UploadConfig {
 export interface AppConfig {
   readonly upload: UploadConfig
 }
+
+
+export interface ModelUploadConfig {
+  /** Directory model files are stored in, relative to process cwd. */
+  readonly dir: string
+  /** Temp directory for in-progress uploads. Defaults to /tmp. */
+  readonly tempDir: string
+  /** Max model file size in bytes. */
+  readonly maxBytes: number
+}
+
+export interface AppConfig {
+  readonly modelUpload: ModelUploadConfig
+}

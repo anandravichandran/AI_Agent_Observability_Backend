@@ -1,3 +1,5 @@
+import path from 'node:path'
+import { mkdir } from 'node:fs/promises'
 import type { Express, RequestHandler } from 'express'
 import { buildConfig } from '@/config'
 import type { AppConfig } from '@/config/config.types'
@@ -15,8 +17,10 @@ import { NodemailerMailer } from '@/infrastructure/mail/nodemailer.mailer'
 import type { IMailer } from '@/infrastructure/mail/mailer.interface'
 import { LocalAvatarStorage } from '@/infrastructure/storage/local-avatar-storage'
 import type { IAvatarStorage } from '@/infrastructure/storage/avatar-storage.interface'
-// Importing the model barrel registers every schema with Mongoose at boot,
-// so index builds happen deterministically rather than on first query.
+import { LocalModelStorage } from '@/infrastructure/storage/local-model-storage'
+import type { IModelStorage } from '@/infrastructure/storage/model-storage.interface'
+import { NoopVirusChecker } from '@/infrastructure/virus/noop-virus-checker'
+import type { IVirusChecker } from '@/infrastructure/virus/virus-checker.interface'
 import '@/infrastructure/database/models'
 import { DatabaseHealthReporter } from '@/modules/health/database.health-reporter'
 import { HealthController } from '@/modules/health/health.controller'
@@ -46,12 +50,17 @@ import type { IUserService } from '@/modules/users/user.service'
 import { AdminService } from '@/modules/admin/admin.service'
 import { AdminController } from '@/modules/admin/admin.controller'
 import type { IAdminService } from '@/modules/admin/admin.service'
+import { ModelService } from '@/modules/models/model.service'
+import { ModelController } from '@/modules/models/model.controller'
+import type { IModelService } from '@/modules/models/model.service'
+import { MongooseModelRepository } from '@/modules/models/model.repository'
+import type { IModelRepository } from '@/modules/models/model.repository.interface'
 import { createAuthenticate } from '@/middleware/authenticate.middleware'
 import { createAuthorize } from '@/middleware/authorize.middleware'
 import { createAvatarUpload } from '@/middleware/upload.middleware'
+import { createModelUpload } from '@/middleware/model-upload.middleware'
 import { createApp } from '@/app'
 
-/** Everything the process needs, resolved and wired. */
 export interface Container {
   readonly config: AppConfig
   readonly logger: WinstonLogger
@@ -63,29 +72,14 @@ export interface Container {
   readonly authService: IAuthService
   readonly userService: IUserService
   readonly adminService: IAdminService
+  readonly modelService: IModelService
   readonly app: Express
 }
 
-/**
- * Composition root.
- *
- * This is the only module permitted to instantiate concrete classes. Every
- * other file receives its collaborators through a constructor or a factory
- * argument and depends solely on interfaces.
- *
- * A hand-rolled container is a deliberate choice over a DI framework: the graph
- * is small, construction order is explicit and readable, there is no decorator
- * metadata or reflection at runtime, and resolution errors surface at compile
- * time rather than on first request.
- *
- * Read top to bottom, this function is also the dependency graph — nothing is
- * hidden behind a decorator or resolved lazily by name.
- */
 export const buildContainer = (config: AppConfig = buildConfig()): Container => {
-  // --- Cross-cutting -------------------------------------------------------
   const logger = createLogger(config.logger)
 
-  // --- Infrastructure ------------------------------------------------------
+  // --- Infrastructure -------------------------------------------------------
   const database: IDatabaseConnection = new MongooseConnection(config.database, logger)
   const mailer: IMailer = new NodemailerMailer(config.mail, logger)
   const avatarStorage: IAvatarStorage = new LocalAvatarStorage(
@@ -93,29 +87,27 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     config.upload.publicPath,
     logger,
   )
+  const modelStorage: IModelStorage = new LocalModelStorage(config.modelUpload.dir, logger)
+  const virusChecker: IVirusChecker = new NoopVirusChecker()
 
-  // --- Security primitives -------------------------------------------------
+  // Ensure upload directories exist at boot rather than on first request.
+  void mkdir(path.resolve(process.cwd(), config.modelUpload.dir), { recursive: true }).catch(() => {})
+  void mkdir(path.resolve(process.cwd(), config.modelUpload.tempDir), { recursive: true }).catch(() => {})
+
+  // --- Security primitives --------------------------------------------------
   const passwordHasher: IPasswordHasher = new BcryptPasswordHasher(config.auth.password)
   const tokenService: ITokenService = new JwtTokenService(config.auth.jwt)
-
-  /**
-   * The OTP pepper is derived from the access secret rather than configured
-   * separately — one fewer secret to rotate, and it is already mandatory and
-   * length-checked in production.
-   */
   const otpService: IOtpService = new OtpService(config.otp, config.auth.jwt.accessSecret)
 
-  // --- Repositories --------------------------------------------------------
+  // --- Repositories ---------------------------------------------------------
   const userRepository: IUserRepository = new MongooseUserRepository()
   const otpRepository: IOtpRepository = new MongooseOtpRepository()
   const sessionRepository: ISessionRepository = new MongooseSessionRepository()
   const auditLogRepository = new MongooseAuditLogRepository()
+  const modelRepository: IModelRepository = new MongooseModelRepository()
 
-  // --- Services ------------------------------------------------------------
-  const auditService: IAuditService = new AuditService({
-    repository: auditLogRepository,
-    logger,
-  })
+  // --- Services -------------------------------------------------------------
+  const auditService: IAuditService = new AuditService({ repository: auditLogRepository, logger })
 
   const authService: IAuthService = new AuthService({
     users: userRepository,
@@ -150,39 +142,36 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     logger,
   })
 
-  // --- Health reporters ----------------------------------------------------
-  // Extend this array to add a dependency to the health report; no other file
-  // changes (Open/Closed).
-  const reporters: HealthReporter[] = [new DatabaseHealthReporter(database)]
-
-  const healthService: IHealthService = new HealthService({
-    app: config.app,
-    http: config.http,
-    reporters,
+  const modelService: IModelService = new ModelService({
+    modelRepository,
+    modelStorage,
+    virusChecker,
+    logger,
   })
 
-  // --- Controllers ---------------------------------------------------------
+  // --- Health ---------------------------------------------------------------
+  const reporters: HealthReporter[] = [new DatabaseHealthReporter(database)]
+  const healthService: IHealthService = new HealthService({ app: config.app, http: config.http, reporters })
+
+  // --- Controllers ----------------------------------------------------------
   const healthController = new HealthController(healthService)
   const authController = new AuthController({ authService, cookieConfig: config.cookie })
   const auditController = new AuditController(auditService)
   const userController = new UserController({ userService, cookieConfig: config.cookie })
   const adminController = new AdminController(adminService)
+  const modelController = new ModelController(modelService)
 
   // --- Guards & upload ------------------------------------------------------
-  const authenticate: RequestHandler = createAuthenticate({
-    tokenService,
-    cookieConfig: config.cookie,
-  })
-
-  // The audit service is handed to the authorizer so denied requests are
-  // recorded. A privilege-escalation probe is exactly the kind of event the
-  // trail exists to capture.
+  const authenticate: RequestHandler = createAuthenticate({ tokenService, cookieConfig: config.cookie })
   const authorize = createAuthorize({ auditService })
   const requireAdmin: RequestHandler = authorize.requireRoles(UserRole.ADMIN)
-
   const avatarUpload: RequestHandler = createAvatarUpload(config.upload.avatarMaxBytes)
+  const modelUpload: RequestHandler = createModelUpload(
+    config.modelUpload.maxBytes,
+    config.modelUpload.tempDir,
+  )
 
-  // --- HTTP ----------------------------------------------------------------
+  // --- HTTP -----------------------------------------------------------------
   const app = createApp({
     config,
     logger,
@@ -191,22 +180,17 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     auditController,
     userController,
     adminController,
+    modelController,
     authenticate,
     requireAdmin,
     avatarUpload,
+    modelUpload,
   })
 
   return {
-    config,
-    logger,
-    database,
-    mailer,
-    healthService,
-    healthController,
-    auditService,
-    authService,
-    userService,
-    adminService,
+    config, logger, database, mailer,
+    healthService, healthController,
+    auditService, authService, userService, adminService, modelService,
     app,
   }
 }

@@ -8,8 +8,10 @@
 export { UserModel, type UserAttributes, type UserDocument } from './user.model'
 export { OtpModel, type OtpAttributes, type OtpDocument } from './otp.model'
 export { SessionModel, type SessionAttributes, type SessionDocument } from './session.model'
+export { AuditLogModel, type AuditLogAttributes, type AuditLogDocument } from './audit-log.model'
+export { AiModelModel, type ModelAttributes, type ModelDocument } from './model.model'
 export {
-  AuditLogModel,
-  type AuditLogAttributes,
-  type AuditLogDocument,
-} from './audit-log.model'
+  ModelVersionModel,
+  type ModelVersionAttributes,
+  type ModelVersionDocument,
+} from './model-version.model'

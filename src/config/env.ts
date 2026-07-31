@@ -156,6 +156,12 @@ const envSchema = z
     SMTP_USER: optionalString,
     SMTP_PASSWORD: optionalString,
     MAIL_FROM: z.string().min(1).default('ArmForge AI <no-reply@armforge.ai>'),
+
+    // --- Model uploads -------------------------------------------------------
+    MODEL_UPLOAD_DIR: z.string().min(1).default('model-uploads'),
+    MODEL_UPLOAD_TEMP_DIR: z.string().min(1).default('/tmp/armforge-uploads'),
+    // 5 GB default ceiling
+    MODEL_UPLOAD_MAX_BYTES: z.coerce.number().int().min(1).default(5 * 1024 * 1024 * 1024),
     MAIL_REPLY_TO: optionalString,
 
     // --- Uploads -------------------------------------------------------------

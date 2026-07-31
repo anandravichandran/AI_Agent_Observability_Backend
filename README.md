@@ -401,3 +401,107 @@ UPLOAD_AVATAR_MAX_BYTES=2097152
 Optimization / benchmark / model endpoints, OAuth/SSO, MFA beyond email OTP,
 image-content deep validation, and a shared object-store adapter for multi-instance
 avatar storage.
+
+---
+
+# Phase 4 — Model Upload & Management
+
+Phase 4 adds AI model upload, versioning, metadata extraction, virus-scan
+integration, and full CRUD management for model records.
+
+## Endpoints
+
+All paths relative to `/api/v1`. All endpoints require authentication.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/models` | Create model record |
+| GET | `/models` | List models (search / filter / sort / page) |
+| GET | `/models/:id` | Get model + all versions |
+| PATCH | `/models/:id` | Update name / description / tags |
+| DELETE | `/models/:id` | Delete model + all version files |
+| POST | `/models/:id/upload` | Upload a model file (new version) |
+| GET | `/models/:id/upload-progress/:uploadId` | Poll upload progress |
+| GET | `/models/:id/versions` | List versions |
+| GET | `/models/:id/versions/:versionId` | Get one version |
+| DELETE | `/models/:id/versions/:versionId` | Delete one version + file |
+
+## Supported frameworks
+
+| Framework | Extensions | Notes |
+| --- | --- | --- |
+| ONNX | `.onnx` | IR version, op-set, producer extracted from protobuf header |
+| PyTorch | `.pt` `.pth` `.bin` | ZIP entries and pickle presence inspected |
+| TensorFlow | `.pb` `.h5` `.keras` `.tflite` | Format classified by extension |
+| GGUF | `.gguf` | Version, tensor count, KV count, architecture from binary header |
+
+## Upload pipeline
+
+HTTP 202 is returned as soon as the file is received. The client polls for progress:
+
+```
+POST /models/:id/upload  ->  202 {uploadId}
+  1. Extension check (framework allow-list)
+  2. Stream to disk + SHA-256 + MD5 in parallel (single read)
+  3. Deduplication: SHA-256 match in same model -> 409
+  4. Persist version record (status: uploading)
+  5. Virus scan via IVirusChecker (noop by default -> skipped)
+  6. Metadata extraction from file header
+  7. Version status -> ready | failed, model.versionCount++
+
+GET /models/:id/upload-progress/:uploadId
+  phases: receiving -> hashing -> scanning -> extracting -> persisting -> done
+```
+
+## File hash & checksum
+
+- **SHA-256** primary identity; used for deduplication
+- **MD5** for compatibility with downstream tooling
+
+Both computed in a single streaming pass via a PassThrough tee.
+
+## Metadata extraction
+
+All extractors read only the file header (first 4–64 KB), so even a 5 GB file yields metadata in milliseconds.
+
+| Framework | Fields |
+| --- | --- |
+| ONNX | `irVersion`, `opsetVersion`, `producerName`, `domain`, `modelVersion` |
+| PyTorch | `hasPickle`, `zipEntries` (first 50 entries) |
+| TensorFlow | `format` (pb/h5/tflite) |
+| GGUF | `version`, `tensorCount`, `kvCount`, `architecture` |
+
+## Virus check hook
+
+Port: `IVirusChecker` in `src/infrastructure/virus/virus-checker.interface.ts`.
+
+Default adapter `NoopVirusChecker` always returns `skipped`. Wire a real scanner in `container.ts`:
+
+```ts
+const virusChecker: IVirusChecker = new ClamAvChecker({ socket: '/var/run/clamav/clamd.sock' })
+```
+
+An `infected` result removes the file immediately and marks the version `failed`.
+
+## Versioning
+
+Each upload creates a new `ModelVersion` document with a monotonically increasing `versionNumber`. The model record stores denormalised `versionCount` and `latestVersionId`. Deleting a version removes the physical file, soft-deletes the row, and recomputes `latestVersionId` from surviving READY versions.
+
+## MongoDB collections
+
+| Collection | Key indexes |
+| --- | --- |
+| `ai_models` | `ownerId`, `framework+status`, text on `name+description` |
+| `model_versions` | `modelId+versionNumber` (unique), `sha256` |
+
+## New environment variables
+
+```dotenv
+MODEL_UPLOAD_DIR=model-uploads
+MODEL_UPLOAD_TEMP_DIR=/tmp/armforge-uploads
+MODEL_UPLOAD_MAX_BYTES=5368709120   # 5 GB
+```
+
+## Not in this phase
+
+Optimization, benchmarking, inference endpoints, object-storage adapter, real-time progress (WebSocket/SSE), content-based deep validation (magic bytes enforcement beyond extension check).

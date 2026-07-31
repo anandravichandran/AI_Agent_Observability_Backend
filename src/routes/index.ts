@@ -9,6 +9,8 @@ import type { UserController } from '@/modules/users/user.controller'
 import { createUserRouter } from '@/modules/users/user.routes'
 import type { AdminController } from '@/modules/admin/admin.controller'
 import { createAdminRouter } from '@/modules/admin/admin.routes'
+import type { ModelController } from '@/modules/models/model.controller'
+import { createModelRouter } from '@/modules/models/model.routes'
 
 export interface ApiRouterDependencies {
   readonly healthController: HealthController
@@ -16,28 +18,17 @@ export interface ApiRouterDependencies {
   readonly auditController: AuditController
   readonly userController: UserController
   readonly adminController: AdminController
+  readonly modelController: ModelController
   readonly credentialLimiter: RequestHandler
   readonly authenticate: RequestHandler
   readonly requireAdmin: RequestHandler
   readonly avatarUpload: RequestHandler
+  readonly modelUpload: RequestHandler
 }
 
-/**
- * Version 1 API router.
- *
- * The single place where feature routers are mounted. Later phases register
- * domain routers here (`/models`, `/optimization`, `/benchmark`, ...); nothing
- * else in the application needs to change to add one.
- *
- * Two surfaces deliberately share the `/admin` prefix: the audit-trail reader
- * and the user-management router. Both are admin-gated, and mounting them on
- * the same prefix keeps the administrative namespace in one place.
- */
 export const createApiV1Router = (dependencies: ApiRouterDependencies): Router => {
   const router = Router()
 
-  // Health is mounted first and without a guard, deliberately: an orchestrator
-  // probing readiness has no credentials.
   router.use(createHealthRouter(dependencies.healthController))
 
   router.use(
@@ -49,7 +40,6 @@ export const createApiV1Router = (dependencies: ApiRouterDependencies): Router =
     }),
   )
 
-  // Account self-service. Every id on this surface comes from the token.
   router.use(
     '/users',
     createUserRouter({
@@ -59,7 +49,6 @@ export const createApiV1Router = (dependencies: ApiRouterDependencies): Router =
     }),
   )
 
-  // Administration: the audit trail and user management share the prefix.
   router.use(
     '/admin',
     createAuditRouter({
@@ -75,6 +64,16 @@ export const createApiV1Router = (dependencies: ApiRouterDependencies): Router =
       controller: dependencies.adminController,
       authenticate: dependencies.authenticate,
       requireAdmin: dependencies.requireAdmin,
+    }),
+  )
+
+  // Phase 4: AI model upload & management.
+  router.use(
+    '/models',
+    createModelRouter({
+      controller: dependencies.modelController,
+      authenticate: dependencies.authenticate,
+      modelUpload: dependencies.modelUpload,
     }),
   )
 

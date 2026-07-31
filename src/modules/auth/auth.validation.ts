@@ -114,27 +114,6 @@ export const refreshTokenSchema = z
 export const logoutSchema = refreshTokenSchema
 
 // ---------------------------------------------------------------------------
-// Queries
-// ---------------------------------------------------------------------------
-
-export const auditQuerySchema = z
-  .object({
-    action: z.string().trim().min(1).max(64).optional(),
-    actorId: z.string().trim().length(24, 'Expected a 24-character id').optional(),
-    outcome: z.enum(['success', 'failure']).optional(),
-    from: z.coerce.date().optional(),
-    to: z.coerce.date().optional(),
-    page: z.coerce.number().int().min(1).default(1),
-    // Capped so a client cannot request the entire trail in one query.
-    limit: z.coerce.number().int().min(1).max(100).default(20),
-  })
-  .strict()
-  .refine(
-    (value) => !value.from || !value.to || value.from <= value.to,
-    { message: '`from` must be earlier than `to`', path: ['from'] },
-  )
-
-// ---------------------------------------------------------------------------
 // Inferred types — the schema is the single source of truth for these shapes.
 // ---------------------------------------------------------------------------
 
@@ -145,4 +124,3 @@ export type ResendOtpBody = z.infer<typeof resendOtpSchema>
 export type ForgotPasswordBody = z.infer<typeof forgotPasswordSchema>
 export type ResetPasswordBody = z.infer<typeof resetPasswordSchema>
 export type RefreshTokenBody = z.infer<typeof refreshTokenSchema>
-export type AuditQueryParams = z.infer<typeof auditQuerySchema>

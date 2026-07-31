@@ -174,3 +174,32 @@ export const buildPasswordChangedEmail = (
     'If this was not you, reset your password immediately and contact support.',
   ].join('\n'),
 })
+
+/**
+ * Sent when an account is closed.
+ *
+ * Like the password-changed notice, this is a security control: if the closure
+ * was not the owner's doing, the message is their signal to contact support.
+ */
+export const buildAccountDeletedEmail = (
+  context: TemplateContext,
+  input: { firstName: string; at: Date },
+): MailMessage => ({
+  to: '',
+  subject: `Your ${context.appName} account has been closed`,
+  html: layout(
+    context,
+    'Your account has been closed',
+    `<p style="margin:0;">Hi ${input.firstName}, your ${context.appName} account was closed on ${input.at.toUTCString()}.</p>
+     <p style="margin:12px 0 0 0;">You have been signed out of every device. You will no longer be able to sign in.</p>
+     <p style="margin:12px 0 0 0;color:#FF6B6B;">If you did not request this, contact support immediately.</p>`,
+  ),
+  text: [
+    `Hi ${input.firstName},`,
+    '',
+    `Your ${context.appName} account was closed on ${input.at.toUTCString()}.`,
+    'You have been signed out of every device and can no longer sign in.',
+    '',
+    'If you did not request this, contact support immediately.',
+  ].join('\n'),
+})

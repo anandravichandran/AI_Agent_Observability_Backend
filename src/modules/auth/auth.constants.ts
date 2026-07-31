@@ -45,11 +45,61 @@ export const UserStatus = {
   ACTIVE: 'active',
   /** Disabled by an administrator. */
   SUSPENDED: 'suspended',
+  /**
+   * Closed by the owner (self-service delete) or an administrator. A soft
+   * delete: the row is retained so the audit trail keeps referring to a real
+   * account, but the account can no longer authenticate.
+   */
+  DELETED: 'deleted',
 } as const
 
 export type UserStatusValue = (typeof UserStatus)[keyof typeof UserStatus]
 
 export const USER_STATUSES = Object.values(UserStatus) as UserStatusValue[]
+
+// ---------------------------------------------------------------------------
+// Profile preferences
+// ---------------------------------------------------------------------------
+
+/** UI colour scheme preference. `system` defers to the client's OS setting. */
+export const UserTheme = {
+  SYSTEM: 'system',
+  LIGHT: 'light',
+  DARK: 'dark',
+} as const
+
+export type UserThemeValue = (typeof UserTheme)[keyof typeof UserTheme]
+
+export const USER_THEMES = Object.values(UserTheme) as UserThemeValue[]
+
+/**
+ * The notification channels a user can toggle.
+ *
+ * `securityAlerts` is included for completeness but is treated as always-on by
+ * the service: a user cannot opt out of being told their password changed.
+ */
+export const NOTIFICATION_KEYS = [
+  'productUpdates',
+  'securityAlerts',
+  'benchmarkComplete',
+  'weeklyReport',
+] as const
+
+export type NotificationKey = (typeof NOTIFICATION_KEYS)[number]
+
+/** Applied to every new account and used as the fallback for legacy rows. */
+export const DEFAULT_USER_PREFERENCES = {
+  theme: UserTheme.SYSTEM,
+  language: 'en',
+  timezone: 'UTC',
+} as const
+
+export const DEFAULT_NOTIFICATION_SETTINGS: Record<NotificationKey, boolean> = {
+  productUpdates: true,
+  securityAlerts: true,
+  benchmarkComplete: true,
+  weeklyReport: false,
+}
 
 // ---------------------------------------------------------------------------
 // OTP
@@ -87,6 +137,10 @@ export const SessionRevocationReason = {
   PASSWORD_CHANGED: 'password_changed',
   MAX_SESSIONS_EXCEEDED: 'max_sessions_exceeded',
   ADMIN_REVOKED: 'admin_revoked',
+  /** A user signed a specific device out from their session manager. */
+  REVOKED_BY_USER: 'revoked_by_user',
+  /** The account was closed (self-service delete). */
+  ACCOUNT_DELETED: 'account_deleted',
 } as const
 
 export type SessionRevocationReasonValue =

@@ -1,12 +1,20 @@
 import { Schema, model, type HydratedDocument, type Model, type Types } from 'mongoose'
 import {
+  DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_USER_PREFERENCES,
   USER_ROLES,
   USER_STATUSES,
+  USER_THEMES,
   UserRole,
   UserStatus,
+  UserTheme,
   type UserRoleValue,
   type UserStatusValue,
 } from '@/modules/auth/auth.constants'
+import type {
+  NotificationSettings,
+  UserPreferences,
+} from '@/modules/auth/auth.entities'
 
 /**
  * User schema.
@@ -26,17 +34,53 @@ export interface UserAttributes {
   status: UserStatusValue
   isEmailVerified: boolean
   emailVerifiedAt?: Date | null
+  /** Avatar image as a data URI or absolute URL. */
+  avatarUrl?: string | null
+  preferences: UserPreferences
+  notificationSettings: NotificationSettings
   lastLoginAt?: Date | null
   lastLoginIp?: string | null
   /** Consecutive failures; reset to zero on any successful authentication. */
   failedLoginAttempts: number
   lockedUntil?: Date | null
   passwordChangedAt?: Date | null
+  /** Set when the account is soft-deleted. */
+  deletedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
 
 export type UserDocument = HydratedDocument<UserAttributes> & { _id: Types.ObjectId }
+
+/**
+ * Embedded preference document. `_id: false` because it is a value object with
+ * no identity of its own — it lives and dies with its parent user.
+ */
+const preferencesSchema = new Schema<UserPreferences>(
+  {
+    theme: {
+      type: String,
+      enum: USER_THEMES,
+      default: UserTheme.SYSTEM,
+    },
+    language: { type: String, default: DEFAULT_USER_PREFERENCES.language, maxlength: 35 },
+    timezone: { type: String, default: DEFAULT_USER_PREFERENCES.timezone, maxlength: 64 },
+  },
+  { _id: false },
+)
+
+const notificationSettingsSchema = new Schema<NotificationSettings>(
+  {
+    productUpdates: { type: Boolean, default: DEFAULT_NOTIFICATION_SETTINGS.productUpdates },
+    securityAlerts: { type: Boolean, default: DEFAULT_NOTIFICATION_SETTINGS.securityAlerts },
+    benchmarkComplete: {
+      type: Boolean,
+      default: DEFAULT_NOTIFICATION_SETTINGS.benchmarkComplete,
+    },
+    weeklyReport: { type: Boolean, default: DEFAULT_NOTIFICATION_SETTINGS.weeklyReport },
+  },
+  { _id: false },
+)
 
 const userSchema = new Schema<UserAttributes>(
   {
@@ -91,6 +135,15 @@ const userSchema = new Schema<UserAttributes>(
       default: false,
     },
     emailVerifiedAt: { type: Date, default: null },
+    avatarUrl: { type: String, default: null },
+    preferences: {
+      type: preferencesSchema,
+      default: (): UserPreferences => ({ ...DEFAULT_USER_PREFERENCES }),
+    },
+    notificationSettings: {
+      type: notificationSettingsSchema,
+      default: (): NotificationSettings => ({ ...DEFAULT_NOTIFICATION_SETTINGS }),
+    },
     lastLoginAt: { type: Date, default: null },
     lastLoginIp: { type: String, default: null },
     failedLoginAttempts: {
@@ -100,6 +153,7 @@ const userSchema = new Schema<UserAttributes>(
     },
     lockedUntil: { type: Date, default: null },
     passwordChangedAt: { type: Date, default: null },
+    deletedAt: { type: Date, default: null },
   },
   {
     timestamps: true,
@@ -127,9 +181,12 @@ userSchema.virtual('fullName').get(function (this: UserAttributes): string {
 })
 
 /**
- * Supports the “clean up unverified signups” query and any future admin
+ * Supports the “clean up unverified signups” query and the admin directory
  * listing filtered by status and recency.
  */
 userSchema.index({ status: 1, createdAt: -1 })
+
+/** Serves the admin directory filtered or sorted by role, newest first. */
+userSchema.index({ role: 1, createdAt: -1 })
 
 export const UserModel: Model<UserAttributes> = model<UserAttributes>('User', userSchema)

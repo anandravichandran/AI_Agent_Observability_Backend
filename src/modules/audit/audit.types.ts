@@ -23,6 +23,20 @@ export const AuditAction = {
   PASSWORD_FORGOT: 'auth.password.forgot',
   PASSWORD_RESET: 'auth.password.reset',
   ACCESS_DENIED: 'auth.access.denied',
+
+  // --- Account self-service ------------------------------------------------
+  PROFILE_UPDATE: 'account.profile.update',
+  PASSWORD_CHANGE: 'account.password.change',
+  ACCOUNT_DELETE: 'account.delete',
+  AVATAR_UPDATE: 'account.avatar.update',
+  PREFERENCES_UPDATE: 'account.preferences.update',
+  NOTIFICATIONS_UPDATE: 'account.notifications.update',
+  SESSION_REVOKE: 'account.session.revoke',
+
+  // --- Administration ------------------------------------------------------
+  ADMIN_USER_UPDATE: 'admin.user.update',
+  ADMIN_USER_DELETE: 'admin.user.delete',
+  ADMIN_USER_SESSIONS_REVOKE: 'admin.user.sessions.revoke',
 } as const
 
 export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction]
@@ -73,13 +87,22 @@ export interface AuditLogEntity {
 }
 
 export interface AuditQuery {
+  /** Exact action match, e.g. `auth.login`. */
   readonly action?: string
+  /** Match any of several actions. Used to scope a user's login history. */
+  readonly actions?: readonly string[]
   readonly actorId?: string
+  readonly actorEmail?: string
+  readonly category?: string
   readonly outcome?: AuditOutcome
+  /** Free-text term matched against action, message, and actor email. */
+  readonly search?: string
   readonly from?: Date
   readonly to?: Date
   readonly page: number
   readonly limit: number
+  /** Validated Mongo sort spec. Defaults to newest-first when omitted. */
+  readonly sort?: Record<string, 1 | -1>
 }
 
 export interface AuditQueryResult {

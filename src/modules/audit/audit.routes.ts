@@ -1,8 +1,8 @@
 import { Router, type RequestHandler } from 'express'
 import { asyncHandler } from '@/core/http/async-handler'
 import { validate } from '@/middleware/validate.middleware'
-import { auditQuerySchema } from '@/modules/auth/auth.validation'
 import type { AuditController } from './audit.controller'
+import { auditQuerySchema } from './audit.validation'
 
 export interface AuditRouterDependencies {
   readonly controller: AuditController

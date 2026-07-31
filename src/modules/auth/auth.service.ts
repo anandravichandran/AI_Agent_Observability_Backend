@@ -328,6 +328,17 @@ export class AuthService implements IAuthService {
       })
     }
 
+    // A soft-deleted account keeps its credentials on file, so the password
+    // comparison above still succeeds. Block it explicitly, or a "deleted"
+    // account would remain fully usable.
+    if (user.status === UserStatus.DELETED) {
+      await this.recordLoginFailure(user.id, user.email, context, 'account_closed')
+
+      throw new ForbiddenError('This account has been closed.', {
+        code: ErrorCode.ACCOUNT_CLOSED,
+      })
+    }
+
     // Checked *after* the password so an attacker cannot use the verification
     // state of an account to confirm the address exists.
     if (!user.isEmailVerified) {

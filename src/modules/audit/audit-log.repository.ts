@@ -1,4 +1,5 @@
 import { Types, type FilterQuery, type Model } from 'mongoose'
+import { buildSearchFilter, toSkip, type SortSpec } from '@/core/query'
 import { AuditLogModel } from '@/infrastructure/database/models/audit-log.model'
 import type {
   AuditLogAttributes,
@@ -40,7 +41,10 @@ export class MongooseAuditLogRepository implements IAuditLogRepository {
     const filter: FilterQuery<AuditLogAttributes> = {}
 
     if (query.action) filter.action = query.action
+    if (query.actions && query.actions.length > 0) filter.action = { $in: [...query.actions] }
     if (query.outcome) filter.outcome = query.outcome
+    if (query.category) filter.category = query.category
+    if (query.actorEmail) filter.actorEmail = query.actorEmail.trim().toLowerCase()
 
     if (query.actorId && Types.ObjectId.isValid(query.actorId)) {
       filter.actorId = new Types.ObjectId(query.actorId)
@@ -53,12 +57,22 @@ export class MongooseAuditLogRepository implements IAuditLogRepository {
       }
     }
 
-    const skip = (query.page - 1) * query.limit
+    const search = buildSearchFilter(query.search, ['action', 'message', 'actorEmail'])
+    if (search) Object.assign(filter, search)
+
+    // Default to newest-first: an audit trail is almost always read from the
+    // most recent event backwards.
+    const sort: SortSpec = query.sort ?? { createdAt: -1 }
 
     // Count and page fetched together; the trail is read rarely enough that a
     // parallel count is cheaper than maintaining a running total.
     const [docs, total] = await Promise.all([
-      this.model.find(filter).sort({ createdAt: -1 }).skip(skip).limit(query.limit).exec(),
+      this.model
+        .find(filter)
+        .sort(sort)
+        .skip(toSkip(query.page, query.limit))
+        .limit(query.limit)
+        .exec(),
       this.model.countDocuments(filter).exec(),
     ])
 

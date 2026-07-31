@@ -38,6 +38,12 @@ import type {
   ISessionRepository,
   IUserRepository,
 } from '@/modules/auth/repositories'
+import { UserService } from '@/modules/users/users.service'
+import { UserController } from '@/modules/users/users.controller'
+import type { IUserService } from '@/modules/users/users.service.interface'
+import { AdminUserService } from '@/modules/admin/admin-user.service'
+import { AdminUserController } from '@/modules/admin/admin-user.controller'
+import type { IAdminUserService } from '@/modules/admin/admin-user.service.interface'
 import { createAuthenticate } from '@/middleware/authenticate.middleware'
 import { createAuthorize } from '@/middleware/authorize.middleware'
 import { createApp } from '@/app'
@@ -52,6 +58,8 @@ export interface Container {
   readonly healthController: HealthController
   readonly auditService: IAuditService
   readonly authService: IAuthService
+  readonly userService: IUserService
+  readonly adminUserService: IAdminUserService
   readonly app: Express
 }
 
@@ -117,6 +125,24 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     appConfig: config.app,
   })
 
+  // Account self-service (profile, credentials, preferences, sessions, ...).
+  const userService: IUserService = new UserService({
+    users: userRepository,
+    sessions: sessionRepository,
+    passwordHasher,
+    mailer,
+    auditService,
+    logger,
+    appConfig: config.app,
+  })
+
+  // Administrator user management.
+  const adminUserService: IAdminUserService = new AdminUserService({
+    users: userRepository,
+    sessions: sessionRepository,
+    auditService,
+  })
+
   // --- Health reporters ----------------------------------------------------
   // Extend this array to add a dependency to the health report; no other file
   // changes (Open/Closed).
@@ -131,7 +157,9 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
   // --- Controllers ---------------------------------------------------------
   const healthController = new HealthController(healthService)
   const authController = new AuthController({ authService, cookieConfig: config.cookie })
+  const userController = new UserController({ userService, cookieConfig: config.cookie })
   const auditController = new AuditController(auditService)
+  const adminUserController = new AdminUserController(adminUserService)
 
   // --- Guards --------------------------------------------------------------
   const authenticate: RequestHandler = createAuthenticate({
@@ -151,7 +179,9 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     logger,
     healthController,
     authController,
+    userController,
     auditController,
+    adminUserController,
     authenticate,
     requireAdmin,
   })
@@ -165,6 +195,8 @@ export const buildContainer = (config: AppConfig = buildConfig()): Container => 
     healthController,
     auditService,
     authService,
+    userService,
+    adminUserService,
     app,
   }
 }

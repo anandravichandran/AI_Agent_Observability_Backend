@@ -1,7 +1,13 @@
 import type {
   CreateUserData,
   LoginFailureState,
+  NotificationSettings,
+  UpdateProfileData,
+  UpdateUserAdminData,
   UserEntity,
+  UserListQuery,
+  UserListResult,
+  UserPreferences,
   UserWithSecret,
 } from '../auth.entities'
 
@@ -56,4 +62,31 @@ export interface IUserRepository {
 
   /** Clears an expired or satisfied lockout. */
   clearLockout(id: string): Promise<void>
+
+  /** Updates editable display fields. Returns the updated entity, or null. */
+  updateProfile(id: string, data: UpdateProfileData): Promise<UserEntity | null>
+
+  /** Sets or clears the avatar. Pass `null` to remove it. */
+  updateAvatar(id: string, avatarUrl: string | null): Promise<UserEntity | null>
+
+  /** Replaces the preference value object. */
+  updatePreferences(id: string, preferences: UserPreferences): Promise<UserEntity | null>
+
+  /** Replaces the notification opt-in flags. */
+  updateNotificationSettings(
+    id: string,
+    settings: NotificationSettings,
+  ): Promise<UserEntity | null>
+
+  /** Applies administrator-editable fields (role, status). */
+  updateAdminFields(id: string, data: UpdateUserAdminData): Promise<UserEntity | null>
+
+  /**
+   * Soft-deletes an account: marks it `deleted`, stamps `deletedAt`, and
+   * scrambles nothing else so the audit trail stays intact.
+   */
+  softDelete(id: string): Promise<UserEntity | null>
+
+  /** Paginated, filtered, searchable, sortable listing for administrators. */
+  list(query: UserListQuery): Promise<UserListResult>
 }

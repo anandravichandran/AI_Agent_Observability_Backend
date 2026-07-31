@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express'
 import { buildPaginationMeta } from '@/core/http/api-response'
 import type { IAuditService } from './audit.service.interface'
-import type { AuditQueryParams } from '@/modules/auth/auth.validation'
+import type { AuditQueryParams } from './audit.validation'
 
 /**
  * Read access to the security audit trail.
@@ -24,11 +24,15 @@ export class AuditController {
     const result = await this.auditService.query({
       ...(query.action ? { action: query.action } : {}),
       ...(query.actorId ? { actorId: query.actorId } : {}),
+      ...(query.actorEmail ? { actorEmail: query.actorEmail } : {}),
+      ...(query.category ? { category: query.category } : {}),
       ...(query.outcome ? { outcome: query.outcome } : {}),
+      ...(query.search ? { search: query.search } : {}),
       ...(query.from ? { from: query.from } : {}),
       ...(query.to ? { to: query.to } : {}),
       page: query.page,
       limit: query.limit,
+      sort: query.sort,
     })
 
     res.success(

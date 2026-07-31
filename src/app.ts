@@ -18,14 +18,18 @@ import {
 import { createApiV1Router } from '@/routes'
 import type { HealthController } from '@/modules/health/health.controller'
 import type { AuthController } from '@/modules/auth/auth.controller'
+import type { UserController } from '@/modules/users/users.controller'
 import type { AuditController } from '@/modules/audit/audit.controller'
+import type { AdminUserController } from '@/modules/admin/admin-user.controller'
 
 export interface CreateAppDependencies {
   readonly config: AppConfig
   readonly logger: WinstonLogger
   readonly healthController: HealthController
   readonly authController: AuthController
+  readonly userController: UserController
   readonly auditController: AuditController
+  readonly adminUserController: AdminUserController
   /** Access-token guard, pre-bound to the token service and cookie config. */
   readonly authenticate: RequestHandler
   /** Role gate bound to `admin`. */
@@ -61,7 +65,9 @@ export const createApp = ({
   logger,
   healthController,
   authController,
+  userController,
   auditController,
+  adminUserController,
   authenticate,
   requireAdmin,
 }: CreateAppDependencies): Express => {
@@ -129,7 +135,9 @@ export const createApp = ({
     createApiV1Router({
       healthController,
       authController,
+      userController,
       auditController,
+      adminUserController,
       credentialLimiter,
       authenticate,
       requireAdmin,

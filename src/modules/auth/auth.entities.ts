@@ -1,9 +1,28 @@
 import type {
+  NotificationKey,
   OtpPurposeValue,
   SessionRevocationReasonValue,
   UserRoleValue,
   UserStatusValue,
+  UserThemeValue,
 } from './auth.constants'
+
+/**
+ * User-editable UI/locale preferences.
+ *
+ * A plain value object embedded on the user document. `language` and `timezone`
+ * are free-form strings (BCP-47 tags and IANA zone names respectively) rather
+ * than enums: the valid set is large, evolves independently of this codebase,
+ * and is better validated at the edge than frozen into a union here.
+ */
+export interface UserPreferences {
+  readonly theme: UserThemeValue
+  readonly language: string
+  readonly timezone: string
+}
+
+/** Per-channel notification opt-in flags. */
+export type NotificationSettings = Record<NotificationKey, boolean>
 
 /**
  * Persistence-agnostic entities.
@@ -23,10 +42,16 @@ export interface UserEntity {
   readonly status: UserStatusValue
   readonly isEmailVerified: boolean
   readonly emailVerifiedAt: Date | null
+  /** Avatar image, stored as a data URI or an absolute URL. Null when unset. */
+  readonly avatarUrl: string | null
+  readonly preferences: UserPreferences
+  readonly notificationSettings: NotificationSettings
   readonly lastLoginAt: Date | null
   readonly failedLoginAttempts: number
   readonly lockedUntil: Date | null
   readonly passwordChangedAt: Date | null
+  /** Set when the account is soft-deleted; null for live accounts. */
+  readonly deletedAt: Date | null
   readonly createdAt: Date
   readonly updatedAt: Date
 }
@@ -57,6 +82,41 @@ export interface LoginFailureState {
   readonly failedLoginAttempts: number
   readonly lockedUntil: Date | null
   readonly isLocked: boolean
+}
+
+/** Editable display fields on a profile. */
+export interface UpdateProfileData {
+  readonly firstName?: string
+  readonly lastName?: string
+}
+
+/** Administrator-editable fields. Intentionally excludes name and credentials. */
+export interface UpdateUserAdminData {
+  readonly role?: UserRoleValue
+  readonly status?: UserStatusValue
+}
+
+/**
+ * A page request against the user directory.
+ *
+ * `sort` is a validated Mongo sort spec and `filters` are exact-match
+ * constraints; `search` is a free-text term matched across name and email.
+ */
+export interface UserListQuery {
+  readonly page: number
+  readonly limit: number
+  readonly sort: Record<string, 1 | -1>
+  readonly search?: string
+  readonly filters: {
+    readonly role?: UserRoleValue
+    readonly status?: UserStatusValue
+    readonly isEmailVerified?: boolean
+  }
+}
+
+export interface UserListResult {
+  readonly items: UserEntity[]
+  readonly total: number
 }
 
 // ---------------------------------------------------------------------------

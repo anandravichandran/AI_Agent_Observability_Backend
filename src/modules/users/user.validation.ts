@@ -130,13 +130,12 @@ export const loginHistoryQuerySchema = z
 // Administration
 // ---------------------------------------------------------------------------
 
-/** A 24-character Mongo ObjectId in a route parameter. */
-const objectIdParam = z
+/** A Postgres UUID primary key in a route parameter (TASK 2 migration). */
+const uuidParam = z
   .string({ required_error: 'A user id is required' })
-  .length(24, 'Expected a 24-character id')
-  .regex(/^[0-9a-fA-F]{24}$/, 'Expected a valid id')
+  .uuid('Expected a valid UUID')
 
-export const userIdParamSchema = z.object({ id: objectIdParam }).strict()
+export const userIdParamSchema = z.object({ id: uuidParam }).strict()
 
 export const listUsersQuerySchema = z
   .object({

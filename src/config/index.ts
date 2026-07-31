@@ -70,15 +70,13 @@ export const buildConfig = (env: Env = loadEnv()): AppConfig => {
     }),
 
     database: Object.freeze({
-      uri: env.MONGO_URI,
-      dbName: env.MONGO_DB_NAME,
-      maxPoolSize: env.MONGO_MAX_POOL_SIZE,
-      minPoolSize: env.MONGO_MIN_POOL_SIZE,
-      serverSelectionTimeoutMs: env.MONGO_SERVER_SELECTION_TIMEOUT_MS,
-      socketTimeoutMs: env.MONGO_SOCKET_TIMEOUT_MS,
-      autoIndex: env.MONGO_AUTO_INDEX,
-      retryAttempts: env.MONGO_RETRY_ATTEMPTS,
-      retryDelayMs: env.MONGO_RETRY_DELAY_MS,
+      url: env.DATABASE_URL,
+      maxPoolSize: env.DATABASE_MAX_POOL_SIZE,
+      connectionTimeoutMs: env.DATABASE_CONNECTION_TIMEOUT_MS,
+      statementTimeoutMs: env.DATABASE_STATEMENT_TIMEOUT_MS,
+      retryAttempts: env.DATABASE_RETRY_ATTEMPTS,
+      retryDelayMs: env.DATABASE_RETRY_DELAY_MS,
+      logQueries: env.DATABASE_LOG_QUERIES,
     }),
 
     logger: Object.freeze({
@@ -136,6 +134,7 @@ export const buildConfig = (env: Env = loadEnv()): AppConfig => {
       ttlMs: env.OTP_TTL_MS,
       maxAttempts: env.OTP_MAX_ATTEMPTS,
       resendCooldownMs: env.OTP_RESEND_COOLDOWN_MS,
+      maxResends: env.OTP_MAX_RESENDS,
     }),
 
     cookie: Object.freeze({

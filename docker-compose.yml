@@ -11,27 +11,30 @@ services:
       NODE_ENV: production
       PORT: 8080
       HOST: 0.0.0.0
-      MONGO_URI: mongodb://mongo:27017
-      MONGO_DB_NAME: armforge
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/armforge?schema=public
       LOG_LEVEL: info
       LOG_PRETTY: 'false'
       SWAGGER_ENABLED: 'true'
     depends_on:
-      mongo:
+      postgres:
         condition: service_healthy
     networks:
       - armforge
 
-  mongo:
-    image: mongo:7
-    container_name: armforge-mongo
+  postgres:
+    image: postgres:16
+    container_name: armforge-postgres
     restart: unless-stopped
     ports:
-      - '27017:27017'
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: armforge
     volumes:
-      - mongo-data:/data/db
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d armforge']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,7 +43,7 @@ services:
       - armforge
 
 volumes:
-  mongo-data:
+  postgres-data:
 
 networks:
   armforge:

@@ -1,0 +1,295 @@
+// ArmForge AI Backend — Prisma schema (PostgreSQL)
+//
+// This is the single source of truth for the relational schema. Every table,
+// index, foreign key, and constraint below replaces the equivalent Mongoose
+// schema/model that previously lived under `src/infrastructure/database/models`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  admin
+  engineer
+  viewer
+}
+
+enum UserStatus {
+  pending
+  active
+  suspended
+}
+
+enum OtpPurpose {
+  email_verification
+  password_reset
+}
+
+enum SessionRevocationReason {
+  logout
+  logout_all
+  rotated
+  reuse_detected
+  password_changed
+  max_sessions_exceeded
+  admin_revoked
+}
+
+enum ApiKeyStatus {
+  active
+  revoked
+}
+
+enum AuditOutcome {
+  success
+  failure
+}
+
+enum ModelFramework {
+  onnx
+  pytorch
+  tensorflow
+  gguf
+}
+
+enum ModelStatus {
+  draft
+  active
+  archived
+}
+
+enum VersionStatus {
+  uploading
+  scanning
+  ready
+  failed
+  deleted
+}
+
+enum VirusScanResult {
+  clean
+  infected
+  skipped
+}
+
+// ---------------------------------------------------------------------------
+// Auth: users, OTPs, sessions
+// ---------------------------------------------------------------------------
+
+model User {
+  id                   String     @id @default(uuid()) @db.Uuid
+  email                String     @unique
+  passwordHash         String
+  firstName            String
+  lastName             String
+  role                 UserRole   @default(engineer)
+  status               UserStatus @default(pending)
+  isEmailVerified      Boolean    @default(false)
+  emailVerifiedAt      DateTime?
+  lastLoginAt          DateTime?
+  lastLoginIp          String?
+  failedLoginAttempts  Int        @default(0)
+  lockedUntil          DateTime?
+  passwordChangedAt    DateTime?
+  avatarUrl            String?
+
+  // Flattened UserPreferencesData sub-document.
+  preferencesTheme     String     @default("system")
+
+  // Flattened UserNotificationsData sub-document.
+  notifyProductUpdates    Boolean @default(true)
+  notifySecurityAlerts    Boolean @default(true)
+  notifyBenchmarkResults  Boolean @default(true)
+  notifyWeeklyDigest      Boolean @default(true)
+
+  /// Soft-delete tombstone. Non-null means the account is deleted.
+  deletedAt            DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  otps       Otp[]
+  sessions   Session[]
+  apiKeys    ApiKey[]
+  models     Model[]         @relation("ModelOwner")
+  versions   ModelVersion[]  @relation("ModelVersionOwner")
+  auditLogs  AuditLog[]      @relation("AuditActor")
+
+  @@index([status])
+  @@index([role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Otp {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @db.Uuid
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email        String
+  purpose      OtpPurpose
+  codeHash     String
+  expiresAt    DateTime
+  attempts     Int        @default(0)
+  maxAttempts  Int
+  /// Number of times this OTP purpose has been reissued via resend.
+  resendCount  Int        @default(0)
+  maxResends   Int
+  consumedAt   DateTime?
+  ip           String
+  userAgent    String
+  createdAt    DateTime   @default(now())
+
+  // Primary lookup: "find the active code for this user + purpose".
+  @@index([userId, purpose, consumedAt, expiresAt])
+  // Supports the periodic cleanup job that purges long-expired codes.
+  @@index([expiresAt])
+  @@map("otps")
+}
+
+model Session {
+  id                   String                   @id @default(uuid()) @db.Uuid
+  userId               String                   @db.Uuid
+  user                 User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId             String                   @db.Uuid
+  tokenHash            String                   @unique
+  ip                   String
+  userAgent            String
+  fingerprint          String?
+  geoCountry           String?
+  geoIsPrivate         Boolean                  @default(false)
+  expiresAt            DateTime
+  lastUsedAt           DateTime                 @default(now())
+  revokedAt            DateTime?
+  revokedReason        SessionRevocationReason?
+  replacedBySessionId  String?                  @db.Uuid
+  createdAt            DateTime                 @default(now())
+
+  // Primary lookup: "active, unexpired sessions for a user".
+  @@index([userId, revokedAt, expiresAt])
+  // Reuse-detection sweep: "revoke every session in this rotation family".
+  @@index([familyId])
+  @@map("sessions")
+}
+
+// ---------------------------------------------------------------------------
+// API keys
+// ---------------------------------------------------------------------------
+
+model ApiKey {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  keyPrefix      String        @unique
+  keyHash        String        @unique
+  /// Scope identifiers (e.g. "models:read"); validated against ApiKeyScope at the application layer.
+  scopes         String[]      @default([])
+  status         ApiKeyStatus  @default(active)
+  lastUsedAt     DateTime?
+  lastUsedIp     String?
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  revokedReason  String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([userId, status])
+  @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail (append-only)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String        @id @default(uuid()) @db.Uuid
+  action      String
+  category    String
+  outcome     AuditOutcome
+  actorId     String?       @db.Uuid
+  actor       User?         @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail  String?
+  actorRole   String?
+  ip          String
+  userAgent   String
+  requestId   String
+  targetType  String?
+  targetId    String?
+  message     String?
+  metadata    Json          @default("{}")
+  createdAt   DateTime      @default(now())
+
+  @@index([action])
+  @@index([category])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Models & versions
+// ---------------------------------------------------------------------------
+
+model Model {
+  id              String          @id @default(uuid()) @db.Uuid
+  ownerId         String          @db.Uuid
+  owner           User            @relation("ModelOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  name            String
+  description     String
+  framework       ModelFramework
+  tags            String[]        @default([])
+  status          ModelStatus     @default(draft)
+  /// Denormalised count of non-deleted versions; kept in sync by the repository.
+  versionCount    Int             @default(0)
+  /// Points at the latest READY version. Application-managed pointer — intentionally
+  /// not a foreign key, since it would otherwise form a reference cycle with ModelVersion.modelId.
+  latestVersionId String?         @db.Uuid
+  deletedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  versions        ModelVersion[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([framework])
+  @@map("models")
+}
+
+model ModelVersion {
+  id                String          @id @default(uuid()) @db.Uuid
+  modelId           String          @db.Uuid
+  model             Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  ownerId           String          @db.Uuid
+  owner             User            @relation("ModelVersionOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  versionNumber     Int
+  versionLabel      String
+  status            VersionStatus   @default(uploading)
+  originalFilename  String
+  storagePath       String
+  mimeType          String
+  extension         String
+  sizeBytes         BigInt
+  sha256            String
+  md5               String
+  virusScan         VirusScanResult @default(skipped)
+  virusScanDetail   String?
+  metadata          Json?
+  uploadedAt        DateTime        @default(now())
+  deletedAt         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([modelId, versionNumber])
+  @@index([sha256])
+  @@index([status])
+  @@map("model_versions")
+}

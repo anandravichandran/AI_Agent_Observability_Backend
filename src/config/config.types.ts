@@ -47,15 +47,15 @@ export interface HttpConfig {
 }
 
 export interface DatabaseConfig {
-  readonly uri: string
-  readonly dbName: string
+  /** PostgreSQL connection string, e.g. postgresql://user:pass@host:5432/db?schema=public */
+  readonly url: string
   readonly maxPoolSize: number
-  readonly minPoolSize: number
-  readonly serverSelectionTimeoutMs: number
-  readonly socketTimeoutMs: number
-  readonly autoIndex: boolean
+  readonly connectionTimeoutMs: number
+  readonly statementTimeoutMs: number
   readonly retryAttempts: number
   readonly retryDelayMs: number
+  /** Emits Prisma query-level logs when true (development only). */
+  readonly logQueries: boolean
 }
 
 export interface LoggerConfig {
@@ -125,6 +125,8 @@ export interface OtpConfig {
   readonly ttlMs: number
   readonly maxAttempts: number
   readonly resendCooldownMs: number
+  /** Total resends permitted before a purpose must be restarted from scratch. */
+  readonly maxResends: number
 }
 
 export interface CookieConfig {

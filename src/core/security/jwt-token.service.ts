@@ -22,11 +22,13 @@ export class JwtTokenService implements ITokenService {
   }
 
   public signAccessToken(claims: AccessTokenClaims): IssuedToken {
+    // `sub` is carried in the payload itself, so the `subject` option is
+    // intentionally omitted: jsonwebtoken rejects a payload that already
+    // contains a claim the options also try to set.
     const token = jwt.sign({ ...claims }, this.config.accessSecret, {
       expiresIn: this.config.accessTtl,
       issuer: this.config.issuer,
       audience: this.config.audience,
-      subject: claims.sub,
       algorithm: 'HS256',
     } as jwt.SignOptions)
 
@@ -34,12 +36,12 @@ export class JwtTokenService implements ITokenService {
   }
 
   public signRefreshToken(claims: RefreshTokenClaims): IssuedToken {
+    // `sub` and `jti` travel in the payload, so `subject`/`jwtid` are omitted
+    // for the same reason as above.
     const token = jwt.sign({ ...claims }, this.config.refreshSecret, {
       expiresIn: this.config.refreshTtl,
       issuer: this.config.issuer,
       audience: this.config.audience,
-      subject: claims.sub,
-      jwtid: claims.jti,
       algorithm: 'HS256',
     } as jwt.SignOptions)
 

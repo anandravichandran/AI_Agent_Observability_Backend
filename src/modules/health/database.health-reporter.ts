@@ -4,11 +4,12 @@ import type { IDatabaseConnection } from '@/infrastructure/database/database.int
 /**
  * Adapts the database port to the generic {@link HealthReporter} contract.
  *
- * This adapter is what allows `HealthService` to remain unaware of MongoDB:
- * it consumes reporters, not connections.
+ * This adapter is what allows `HealthService` to remain unaware of the
+ * concrete database technology (PostgreSQL/Prisma): it consumes reporters,
+ * not connections.
  */
 export class DatabaseHealthReporter implements HealthReporter {
-  public readonly name = 'mongodb'
+  public readonly name = 'postgresql'
 
   private readonly connection: IDatabaseConnection
 

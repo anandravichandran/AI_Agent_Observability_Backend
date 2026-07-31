@@ -6,7 +6,7 @@ export { toModelDto, toVersionDto, toModelDetailDto, toModelWithLatestVersionDto
 export { ModelService, type IModelService, type ModelServiceDependencies } from './model.service'
 export { ModelController } from './model.controller'
 export { createModelRouter, type ModelRouterDependencies } from './model.routes'
-export { MongooseModelRepository } from './model.repository'
+export { PrismaModelRepository } from './prisma-model.repository'
 export type { IModelRepository } from './model.repository.interface'
 export { uploadProgressStore } from './upload-progress.store'
 export { extractMetadata, detectFrameworkFromMagic } from './model.metadata'

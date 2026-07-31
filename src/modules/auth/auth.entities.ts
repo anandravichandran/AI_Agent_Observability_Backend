@@ -91,6 +91,14 @@ export interface OtpEntity {
   readonly expiresAt: Date
   readonly attempts: number
   readonly maxAttempts: number
+  /**
+   * Number of times this OTP lineage has been resent (TASK 6: "Maximum resend
+   * attempts"). Previously unenforced — see MIGRATION_REPORT.md, "Missing
+   * resend cap". Carried forward across a resend so the cap applies to the
+   * whole verification attempt, not merely to the most recent code.
+   */
+  readonly resendCount: number
+  readonly maxResends: number
   readonly consumedAt: Date | null
   readonly createdAt: Date
 }
@@ -102,6 +110,9 @@ export interface CreateOtpData {
   readonly codeHash: string
   readonly expiresAt: Date
   readonly maxAttempts: number
+  readonly maxResends: number
+  /** Carried over from the invalidated predecessor on a resend; 0 for a first send. */
+  readonly resendCount: number
   readonly ip: string
   readonly userAgent: string
 }
@@ -140,6 +151,16 @@ export interface SessionEntity {
 }
 
 export interface CreateSessionData {
+  /**
+   * Pre-generated session id. The service layer generates this UUID *before*
+   * signing the refresh token so the `sid` claim embedded in the JWT matches
+   * the row's real primary key. Previously the id used in the claim was
+   * computed independently of the row Mongo assigned on insert, so `sid`
+   * never matched any session and session-scoped refresh lookups silently
+   * fell back to token-hash-only matching — see MIGRATION_REPORT.md, "sid/id
+   * mismatch". Required (not optional) so every adapter must honor it.
+   */
+  readonly id: string
   readonly userId: string
   readonly familyId: string
   readonly tokenHash: string

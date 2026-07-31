@@ -53,11 +53,16 @@ const personName = (label: string) =>
       `${label} may only contain letters, spaces, apostrophes, and hyphens`,
     )
 
-/** Digits only. Trimmed first, because copy-paste routinely carries whitespace. */
+/**
+ * Exactly 6 digits. Trimmed first, because copy-paste routinely carries
+ * whitespace. TASK 6 mandates a 6-digit numeric OTP; the previous `{4,10}`
+ * range accepted codes the generator never produces, which only widened the
+ * attacker's guessing surface for no functional benefit.
+ */
 const otpCode = z
   .string({ required_error: 'Verification code is required' })
   .trim()
-  .regex(/^\d{4,10}$/, 'Enter the numeric verification code')
+  .regex(/^\d{6}$/, 'Enter the 6-digit verification code')
 
 // ---------------------------------------------------------------------------
 // Bodies
@@ -121,7 +126,11 @@ export const logoutSchema = refreshTokenSchema
 export const auditQuerySchema = z
   .object({
     action: z.string().trim().min(1).max(64).optional(),
-    actorId: z.string().trim().length(24, 'Expected a 24-character id').optional(),
+    actorId: z
+      .string()
+      .trim()
+      .uuid('Expected a valid UUID')
+      .optional(),
     outcome: z.enum(['success', 'failure']).optional(),
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),

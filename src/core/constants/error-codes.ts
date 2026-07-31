@@ -43,6 +43,8 @@ export const ErrorCode = {
   OTP_ATTEMPTS_EXCEEDED: 'OTP_ATTEMPTS_EXCEEDED',
   OTP_NOT_FOUND: 'OTP_NOT_FOUND',
   OTP_RESEND_COOLDOWN: 'OTP_RESEND_COOLDOWN',
+  /** Every resend for a (user, purpose) lineage has been exhausted (TASK 6). */
+  OTP_RESEND_LIMIT_EXCEEDED: 'OTP_RESEND_LIMIT_EXCEEDED',
 
   // --- Authorization --------------------------------------------------------
   FORBIDDEN: 'FORBIDDEN',

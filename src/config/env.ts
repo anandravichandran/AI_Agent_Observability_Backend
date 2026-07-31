@@ -80,22 +80,20 @@ const envSchema = z
     SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(0).default(10_000),
     APP_WEB_URL: z.string().url().default('http://localhost:3000'),
 
-    // --- MongoDB -----------------------------------------------------------
-    MONGO_URI: z
+    // --- PostgreSQL (Prisma) -------------------------------------------------
+    DATABASE_URL: z
       .string()
-      .min(1, 'MONGO_URI is required')
+      .min(1, 'DATABASE_URL is required')
       .refine(
-        (value) => value.startsWith('mongodb://') || value.startsWith('mongodb+srv://'),
-        'MONGO_URI must start with mongodb:// or mongodb+srv://',
+        (value) => value.startsWith('postgresql://') || value.startsWith('postgres://'),
+        'DATABASE_URL must start with postgresql:// or postgres://',
       ),
-    MONGO_DB_NAME: z.string().min(1).default('armforge'),
-    MONGO_MAX_POOL_SIZE: z.coerce.number().int().min(1).default(10),
-    MONGO_MIN_POOL_SIZE: z.coerce.number().int().min(0).default(2),
-    MONGO_SERVER_SELECTION_TIMEOUT_MS: z.coerce.number().int().min(100).default(10_000),
-    MONGO_SOCKET_TIMEOUT_MS: z.coerce.number().int().min(100).default(45_000),
-    MONGO_AUTO_INDEX: booleanFromString(true),
-    MONGO_RETRY_ATTEMPTS: z.coerce.number().int().min(0).default(5),
-    MONGO_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(2_000),
+    DATABASE_MAX_POOL_SIZE: z.coerce.number().int().min(1).default(10),
+    DATABASE_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(100).default(10_000),
+    DATABASE_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).default(30_000),
+    DATABASE_RETRY_ATTEMPTS: z.coerce.number().int().min(0).default(5),
+    DATABASE_RETRY_DELAY_MS: z.coerce.number().int().min(0).default(2_000),
+    DATABASE_LOG_QUERIES: booleanFromString(false),
 
     // --- Logging -----------------------------------------------------------
     LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'debug']).default('info'),
@@ -141,8 +139,11 @@ const envSchema = z
 
     // --- OTP ---------------------------------------------------------------
     OTP_LENGTH: z.coerce.number().int().min(4).max(10).default(6),
-    OTP_TTL_MS: z.coerce.number().int().min(30_000).default(600_000),
+    // TASK 6: OTP expires in 5 minutes.
+    OTP_TTL_MS: z.coerce.number().int().min(30_000).default(300_000),
     OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+    // TASK 6: maximum resend attempts before a purpose must be restarted from scratch.
+    OTP_MAX_RESENDS: z.coerce.number().int().min(1).default(5),
     OTP_RESEND_COOLDOWN_MS: z.coerce.number().int().min(0).default(60_000),
 
     // --- Cookies -----------------------------------------------------------
@@ -193,15 +194,8 @@ const envSchema = z
     GEO_TRACKING_ENABLED: booleanFromString(true),
   })
   .superRefine((env, ctx) => {
-    if (env.MONGO_MIN_POOL_SIZE > env.MONGO_MAX_POOL_SIZE) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['MONGO_MIN_POOL_SIZE'],
-        message: 'Must be less than or equal to MONGO_MAX_POOL_SIZE',
-      })
-    }
-
     const isProduction = env.NODE_ENV === 'production'
+
 
     // --- Secrets ---------------------------------------------------------
     // Never allow a deployment to run on a fallback signing key. A weak or

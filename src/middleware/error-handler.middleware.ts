@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler } from 'express'
-import mongoose from 'mongoose'
+import { Prisma } from '@/infrastructure/database/prisma.client'
 import { ZodError } from 'zod'
 import type { AppMetaConfig } from '@/config/config.types'
 import { ErrorCode, HttpStatus, isServerError } from '@/core/constants'
@@ -33,11 +33,6 @@ interface BodyParserError extends Error {
 const isBodyParserError = (error: unknown): error is BodyParserError =>
   error instanceof Error && 'type' in error && typeof (error as BodyParserError).type === 'string'
 
-const hasMongoDuplicateKey = (error: unknown): error is { keyValue?: Record<string, unknown> } =>
-  typeof error === 'object' &&
-  error !== null &&
-  'code' in error &&
-  (error as { code?: unknown }).code === 11000
 
 /**
  * Translates any thrown value into a consistent, client-safe shape.
@@ -75,52 +70,75 @@ const normaliseError = (error: unknown): NormalisedError => {
     }
   }
 
-  // --- Mongoose document validation ----------------------------------------
-  if (error instanceof mongoose.Error.ValidationError) {
-    return {
-      statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-      code: ErrorCode.VALIDATION_ERROR,
-      message: 'The document failed schema validation.',
-      details: Object.values(error.errors).map((issue) => ({
-        field: issue.path,
-        message: issue.message,
-      })),
-      isOperational: true,
-      original: error,
+  // --- Prisma / PostgreSQL failures -----------------------------------------
+  // Replaces the old Mongoose ValidationError/CastError/duplicate-key (11000)
+  // /MongooseServerSelectionError branches with their Prisma equivalents. See
+  // MIGRATION_REPORT.md "Error handler still spoke Mongoose".
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    // P2002: unique constraint violation.
+    if (error.code === 'P2002') {
+      const target = error.meta?.target
+      const fields = Array.isArray(target) ? (target as string[]) : typeof target === 'string' ? [target] : []
+
+      return {
+        statusCode: HttpStatus.CONFLICT,
+        code: ErrorCode.DUPLICATE_RESOURCE,
+        message: 'A resource with these values already exists.',
+        details: fields.map((field) => ({
+          field,
+          message: `"${field}" must be unique.`,
+        })),
+        isOperational: true,
+        original: error,
+      }
+    }
+
+    // P2025: the row targeted by an update/delete/required-relation read does
+    // not exist. This is Prisma's equivalent of a Mongoose CastError landing
+    // on a document that was never there.
+    if (error.code === 'P2025') {
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        code: ErrorCode.NOT_FOUND,
+        message: 'The requested resource could not be found.',
+        details: [],
+        isOperational: true,
+        original: error,
+      }
+    }
+
+    // P2003: foreign key constraint violation.
+    if (error.code === 'P2003') {
+      const fieldName = typeof error.meta?.field_name === 'string' ? error.meta.field_name : undefined
+
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        code: ErrorCode.INVALID_IDENTIFIER,
+        message: 'The request references a resource that does not exist.',
+        details: fieldName ? [{ field: fieldName, message: 'References a nonexistent row.' }] : [],
+        isOperational: true,
+        original: error,
+      }
     }
   }
 
-  // --- Malformed identifier -------------------------------------------------
-  if (error instanceof mongoose.Error.CastError) {
+  // Malformed query input (e.g. a non-UUID string passed to a UUID column).
+  if (error instanceof Prisma.PrismaClientValidationError) {
     return {
       statusCode: HttpStatus.BAD_REQUEST,
       code: ErrorCode.INVALID_IDENTIFIER,
-      message: `"${String(error.value)}" is not a valid ${error.kind}.`,
-      details: [{ field: error.path, message: `Expected a valid ${error.kind}.` }],
+      message: 'The request contains a malformed identifier or value.',
+      details: [],
       isOperational: true,
       original: error,
     }
   }
 
-  // --- Unique index violation ----------------------------------------------
-  if (hasMongoDuplicateKey(error)) {
-    const fields = Object.keys(error.keyValue ?? {})
-
-    return {
-      statusCode: HttpStatus.CONFLICT,
-      code: ErrorCode.DUPLICATE_RESOURCE,
-      message: 'A resource with these values already exists.',
-      details: fields.map((field) => ({
-        field,
-        message: `"${field}" must be unique.`,
-      })),
-      isOperational: true,
-      original: error,
-    }
-  }
-
-  // --- Driver-level failures ------------------------------------------------
-  if (error instanceof mongoose.Error.MongooseServerSelectionError) {
+  // Connection pool exhaustion, network failure, TLS failure, etc.
+  if (
+    error instanceof Prisma.PrismaClientInitializationError ||
+    error instanceof Prisma.PrismaClientRustPanicError
+  ) {
     return {
       statusCode: HttpStatus.SERVICE_UNAVAILABLE,
       code: ErrorCode.DATABASE_UNAVAILABLE,

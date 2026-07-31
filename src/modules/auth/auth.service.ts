@@ -753,11 +753,22 @@ export class AuthService implements IAuthService {
     context: RequestContext,
   ): Promise<{ tokens: TokenPair; sessionId: string }> {
     const jti = crypto.randomUUID()
-    const placeholderSessionId = new Date().getTime().toString(16) + jti.slice(0, 8)
+
+    // The session id is generated *before* either token is signed, and the
+    // same id is used as both the refresh token's `sid` claim and the
+    // session row's primary key. Previously the refresh token embedded a
+    // throwaway placeholder (`Date.now().toString(16) + jti.slice(...)`)
+    // that never matched any row, so any consumer trusting the refresh
+    // token's `sid` (e.g. session-scoped revocation, forensics correlating a
+    // claim back to a row) silently failed to find a match — see
+    // MIGRATION_REPORT.md, "sid/id mismatch". The access token's `sid` was
+    // already correct because it was signed after the row existed; this fix
+    // makes the refresh token consistent with it.
+    const sessionId = crypto.randomUUID()
 
     const refresh = this.deps.tokenService.signRefreshToken({
       sub: user.id,
-      sid: placeholderSessionId,
+      sid: sessionId,
       fid: familyId,
       jti,
       type: TokenType.REFRESH,
@@ -767,6 +778,7 @@ export class AuthService implements IAuthService {
     const geo = await this.deps.geoLocationService.resolve(context.ip).catch(() => null)
 
     const session = await this.deps.sessions.create({
+      id: sessionId,
       userId: user.id,
       familyId,
       tokenHash: this.deps.tokenService.hashToken(refresh.token),
@@ -804,6 +816,23 @@ export class AuthService implements IAuthService {
     purpose: OtpPurposeValue,
     context: RequestContext,
   ): Promise<OtpDispatchResult> {
+    // TASK 6 / MIGRATION_REPORT.md "Missing resend cap": every reissue for the
+    // same (user, purpose) lineage — whether triggered by an explicit resend,
+    // a repeated forgot-password request, or re-registering an unverified
+    // account — counts against a maximum. Without this a purpose could be
+    // resent indefinitely, turning the mailer into an open spam relay.
+    const previous = await this.deps.otps.findActive(user.id, purpose)
+    const resendCount = previous ? previous.resendCount + 1 : 0
+
+    if (resendCount > this.deps.otpConfig.maxResends) {
+      await this.recordOtpFailure(user, purpose, context, 'resend_limit_exceeded')
+
+      throw new TooManyRequestsError(
+        'Too many codes have been requested. Please request a new one later.',
+        { code: ErrorCode.OTP_RESEND_LIMIT_EXCEEDED },
+      )
+    }
+
     await this.deps.otps.invalidateAll(user.id, purpose)
 
     const { code, codeHash } = this.deps.otpService.generate()
@@ -816,6 +845,8 @@ export class AuthService implements IAuthService {
       codeHash,
       expiresAt,
       maxAttempts: this.deps.otpConfig.maxAttempts,
+      maxResends: this.deps.otpConfig.maxResends,
+      resendCount,
       ip: context.ip,
       userAgent: context.userAgent,
     })

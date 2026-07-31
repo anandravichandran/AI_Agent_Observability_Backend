@@ -53,7 +53,7 @@ export const componentSchemas: Record<string, unknown> = {
     required: ['message'],
     properties: {
       field: { type: 'string', example: 'modelId' },
-      message: { type: 'string', example: 'Expected a valid ObjectId.' },
+      message: { type: 'string', example: 'Expected a valid UUID.' },
       code: { type: 'string', example: 'invalid_type' },
     },
   },
@@ -92,7 +92,7 @@ export const componentSchemas: Record<string, unknown> = {
     type: 'object',
     required: ['name', 'status'],
     properties: {
-      name: { type: 'string', example: 'mongodb' },
+      name: { type: 'string', example: 'postgresql' },
       status: {
         type: 'string',
         enum: ['up', 'down', 'degraded', 'unknown'],

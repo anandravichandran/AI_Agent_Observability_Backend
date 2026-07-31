@@ -1,13 +1,16 @@
 {
   "name": "armforge-ai-backend",
-  "version": "1.4.0",
-  "description": "ArmForge AI \u2014 Backend API (Phase 5 \u2014 security hardening: CSRF, API keys, device fingerprinting, geo tracking).",
+  "version": "1.5.0",
+  "description": "ArmForge AI — Backend API (PostgreSQL + Prisma).",
   "license": "UNLICENSED",
   "private": true,
   "engines": {
     "node": ">=22.0.0"
   },
   "main": "dist/server.js",
+  "prisma": {
+    "schema": "prisma/schema.prisma"
+  },
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/server.ts",
     "build": "rimraf dist && tsc -p tsconfig.build.json",
@@ -16,9 +19,16 @@
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.5",
     "cookie-parser": "^1.4.7",
@@ -28,7 +38,6 @@
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.2",
     "nodemailer": "^6.10.0",
@@ -53,9 +62,11 @@
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^9.1.0",
     "prettier": "^3.4.2",
+    "prisma": "^6.19.3",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "vitest": "^2.1.8"
   }
 }

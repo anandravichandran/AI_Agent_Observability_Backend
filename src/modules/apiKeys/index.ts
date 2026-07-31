@@ -8,7 +8,7 @@ export type {
   ApiKeyListResult,
   IApiKeyRepository,
 } from './api-key.repository.interface'
-export { MongooseApiKeyRepository } from './api-key.repository'
+export { PrismaApiKeyRepository } from './prisma-api-key.repository'
 export { ApiKeyService } from './api-key.service'
 export type { IApiKeyService, ApiKeyServiceDependencies } from './api-key.service'
 export { ApiKeyController } from './api-key.controller'

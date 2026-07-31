@@ -27,9 +27,10 @@ const readHead = (filePath: string, count: number): Promise<Buffer> =>
     let total = 0
     const stream = createReadStream(filePath, { start: 0, end: count - 1 })
 
-    stream.on('data', (chunk: Buffer) => {
-      chunks.push(chunk)
-      total += chunk.length
+    stream.on('data', (chunk: string | Buffer) => {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+      chunks.push(bytes)
+      total += bytes.length
     })
 
     stream.on('end', () => resolve(Buffer.concat(chunks, total)))
@@ -68,13 +69,16 @@ const readUInt64LE = (buf: Buffer, offset: number): number => {
  *   4 = producer_version, 5 = domain, 6 = model_version (int64),
  *   7 = doc_string, 8 = graph (GraphProto)
  */
+/** Mutable working copy used while accumulating decoded ONNX fields. */
+type MutableOnnxMetadata = { -readonly [K in keyof OnnxMetadata]: OnnxMetadata[K] }
+
 const extractOnnxMetadata = async (
   filePath: string,
 ): Promise<OnnxMetadata> => {
   try {
     const buf = await readHead(filePath, 4096)
     let pos = 0
-    const result: OnnxMetadata = {}
+    const result: MutableOnnxMetadata = {}
 
     while (pos < buf.length) {
       if (pos >= buf.length) break
@@ -190,7 +194,7 @@ const extractPytorchMetadata = async (
     const tailBuf = await new Promise<Buffer>((res, rej) => {
       const chunks: Buffer[] = []
       const s = crs(filePath, { start, end: st.size - 1 })
-      s.on('data', (c: Buffer) => chunks.push(c))
+      s.on('data', (c: string | Buffer) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)))
       s.on('end', () => res(Buffer.concat(chunks)))
       s.on('error', rej)
     })

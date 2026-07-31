@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { OTP_PURPOSES, OtpPurpose } from './auth.constants'
+import { nonEmptyEnumTuple } from '@/core/utils/zod-enum'
 
 /**
  * Request schemas.
@@ -86,7 +87,7 @@ export const resendOtpSchema = z
   .object({
     email,
     purpose: z
-      .enum(OTP_PURPOSES as [string, ...string[]], {
+      .enum(nonEmptyEnumTuple(OTP_PURPOSES), {
         errorMap: () => ({ message: 'Unsupported verification purpose' }),
       })
       .default(OtpPurpose.EMAIL_VERIFICATION),

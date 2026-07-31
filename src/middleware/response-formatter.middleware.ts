@@ -48,21 +48,40 @@ export const createResponseFormatter = (apiVersion: string): RequestHandler => {
       })
     }
 
+    /**
+     * Shared envelope sender, invoked with an explicit `res` rather than
+     * relying on a `this`-typed method call. Chaining `this.respond(...)`
+     * from inside another augmented `Express.Response` method makes
+     * TypeScript re-derive `this` from the narrower function-expression
+     * scope, which then fails structural assignability against the fuller
+     * generic `Response<any, Record<string, any>>` shape. Threading `res`
+     * explicitly sidesteps that entirely.
+     */
+    const sendEnvelope = <TData>(
+      target: Response,
+      statusCode: number,
+      data: TData,
+      message: string,
+      pagination?: PaginationMeta,
+    ): Response => {
+      const meta = buildResponseMeta(target)
+
+      if (meta.durationMs !== undefined && !target.headersSent) {
+        target.setHeader(Headers.RESPONSE_TIME, `${meta.durationMs}ms`)
+      }
+
+      return target.status(statusCode).json(
+        buildSuccessResponse({ data, statusCode, message, meta, pagination }),
+      )
+    }
+
     res.respond = function respond<TData>(
       statusCode: number,
       data: TData,
       message = 'Request completed successfully.',
       pagination?: PaginationMeta,
     ): Response {
-      const meta = buildResponseMeta(this)
-
-      if (meta.durationMs !== undefined && !this.headersSent) {
-        this.setHeader(Headers.RESPONSE_TIME, `${meta.durationMs}ms`)
-      }
-
-      return this.status(statusCode).json(
-        buildSuccessResponse({ data, statusCode, message, meta, pagination }),
-      )
+      return sendEnvelope(this, statusCode, data, message, pagination)
     }
 
     res.success = function success<TData>(
@@ -70,21 +89,21 @@ export const createResponseFormatter = (apiVersion: string): RequestHandler => {
       message = 'Request completed successfully.',
       pagination?: PaginationMeta,
     ): Response {
-      return this.respond(HttpStatus.OK, data, message, pagination)
+      return sendEnvelope(this, HttpStatus.OK, data, message, pagination)
     }
 
     res.created = function created<TData>(
       data: TData,
       message = 'Resource created successfully.',
     ): Response {
-      return this.respond(HttpStatus.CREATED, data, message)
+      return sendEnvelope(this, HttpStatus.CREATED, data, message)
     }
 
     res.accepted = function accepted<TData>(
       data: TData,
       message = 'Request accepted for processing.',
     ): Response {
-      return this.respond(HttpStatus.ACCEPTED, data, message)
+      return sendEnvelope(this, HttpStatus.ACCEPTED, data, message)
     }
 
     res.noContent = function noContent(): Response {

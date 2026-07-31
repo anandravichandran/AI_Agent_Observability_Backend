@@ -6,11 +6,10 @@ import { BadRequestError, NotFoundError } from '@/core/errors/app-error'
 import type { IModelService } from './model.service'
 import type {
   CreateModelBody,
-  ListModelsQuery,
+  ListModelsQueryParams,
   UpdateModelBody,
   UploadVersionBody,
 } from './model.validation'
-import type { ModelFrameworkValue, ModelStatusValue } from './model.constants'
 
 export class ModelController {
   private readonly service: IModelService
@@ -29,7 +28,7 @@ export class ModelController {
     const model = await this.service.createModel(actor, {
       name: body.name,
       description: body.description,
-      framework: body.framework as ModelFrameworkValue,
+      framework: body.framework,
       tags: body.tags,
     })
     res.created({ model }, 'Model created.')
@@ -37,11 +36,11 @@ export class ModelController {
 
   public listModels = async (req: Request, res: Response): Promise<void> => {
     const actor = requireActor(req)
-    const query = req.query as unknown as ListModelsQuery
+    const query = req.query as unknown as ListModelsQueryParams
     const result = await this.service.listModels(actor, {
       search: query.search,
-      framework: query.framework as ModelFrameworkValue | undefined,
-      status: query.status as ModelStatusValue | undefined,
+      framework: query.framework,
+      status: query.status,
       sortBy: query.sortBy,
       sortOrder: query.sortOrder,
       page: query.page,

@@ -181,7 +181,7 @@ export class MongooseConnection implements IDatabaseConnection {
   }
 
   private resolveState(): ConnectionState {
-    return READY_STATE[mongoose.connection.readyState] ?? 'unknown as never'
+    return READY_STATE[mongoose.connection.readyState] ?? 'uninitialized'
   }
 
   /**

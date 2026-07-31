@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { USER_ROLES, USER_STATUSES } from '@/modules/auth/auth.constants'
 import { THEME_PREFERENCES, ThemePreference, USER_SORT_FIELDS } from './user.constants'
+import { nonEmptyEnumTuple } from '@/core/utils/zod-enum'
 
 /**
  * User & account request schemas.
@@ -69,7 +70,7 @@ export const deleteAccountSchema = z
 export const updatePreferencesSchema = z
   .object({
     theme: z
-      .enum(THEME_PREFERENCES as [string, ...string[]], {
+      .enum(nonEmptyEnumTuple(THEME_PREFERENCES), {
         errorMap: () => ({ message: 'Unsupported theme' }),
       })
       .default(ThemePreference.SYSTEM),
@@ -140,9 +141,9 @@ export const userIdParamSchema = z.object({ id: objectIdParam }).strict()
 export const listUsersQuerySchema = z
   .object({
     search: z.string().trim().min(1).max(120).optional(),
-    role: z.enum(USER_ROLES as [string, ...string[]]).optional(),
-    status: z.enum(USER_STATUSES as [string, ...string[]]).optional(),
-    sortBy: z.enum(USER_SORT_FIELDS as [string, ...string[]]).optional(),
+    role: z.enum(nonEmptyEnumTuple(USER_ROLES)).optional(),
+    status: z.enum(nonEmptyEnumTuple(USER_STATUSES)).optional(),
+    sortBy: z.enum(nonEmptyEnumTuple(USER_SORT_FIELDS)).optional(),
     sortOrder: z.enum(['asc', 'desc']).optional(),
     ...paginationFields,
   })
@@ -150,7 +151,7 @@ export const listUsersQuerySchema = z
 
 export const updateUserRoleSchema = z
   .object({
-    role: z.enum(USER_ROLES as [string, ...string[]], {
+    role: z.enum(nonEmptyEnumTuple(USER_ROLES), {
       errorMap: () => ({ message: 'Unsupported role' }),
     }),
   })
@@ -158,7 +159,7 @@ export const updateUserRoleSchema = z
 
 export const updateUserStatusSchema = z
   .object({
-    status: z.enum(USER_STATUSES as [string, ...string[]], {
+    status: z.enum(nonEmptyEnumTuple(USER_STATUSES), {
       errorMap: () => ({ message: 'Unsupported status' }),
     }),
   })

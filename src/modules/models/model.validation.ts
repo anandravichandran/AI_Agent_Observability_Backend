@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { MODEL_FRAMEWORKS, MODEL_SORT_FIELDS, MODEL_STATUSES } from './model.constants'
+import { nonEmptyEnumTuple } from '@/core/utils/zod-enum'
 
 const objectId = z
   .string()
@@ -14,7 +15,7 @@ export const createModelSchema = z
       .min(1, 'Model name is required')
       .max(200, 'Model name is too long'),
     description: z.string().trim().max(2000, 'Description is too long').default(''),
-    framework: z.enum(MODEL_FRAMEWORKS as [string, ...string[]], {
+    framework: z.enum(nonEmptyEnumTuple(MODEL_FRAMEWORKS), {
       errorMap: () => ({ message: `Supported frameworks: ${MODEL_FRAMEWORKS.join(', ')}` }),
     }),
     tags: z
@@ -45,13 +46,13 @@ export const versionIdParamSchema = z
 export const listModelsQuerySchema = z
   .object({
     search: z.string().trim().min(1).max(200).optional(),
-    framework: z.enum(MODEL_FRAMEWORKS as [string, ...string[]]).optional(),
-    status: z.enum(MODEL_STATUSES as [string, ...string[]]).optional(),
+    framework: z.enum(nonEmptyEnumTuple(MODEL_FRAMEWORKS)).optional(),
+    status: z.enum(nonEmptyEnumTuple(MODEL_STATUSES)).optional(),
     ownedByMe: z
       .string()
       .optional()
       .transform((v) => v === 'true' || v === '1'),
-    sortBy: z.enum(MODEL_SORT_FIELDS as [string, ...string[]]).optional(),
+    sortBy: z.enum(nonEmptyEnumTuple(MODEL_SORT_FIELDS)).optional(),
     sortOrder: z.enum(['asc', 'desc']).optional(),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -68,5 +69,5 @@ export const uploadVersionSchema = z
 
 export type CreateModelBody = z.infer<typeof createModelSchema>
 export type UpdateModelBody = z.infer<typeof updateModelSchema>
-export type ListModelsQuery = z.infer<typeof listModelsQuerySchema>
+export type ListModelsQueryParams = z.infer<typeof listModelsQuerySchema>
 export type UploadVersionBody = z.infer<typeof uploadVersionSchema>

@@ -9,7 +9,7 @@ import {
 import { computeRequestFingerprint, requireActor, toRequestContext } from '@/core/http/request-context'
 import { UnauthorizedError } from '@/core/errors/app-error'
 import { ErrorCode } from '@/core/constants/error-codes'
-import type { AuthenticationResult, OtpPurposeInput, RequestContext } from './auth.types'
+import type { AuthenticationResult, OtpPurposeValue, RequestContext } from './auth.types'
 import type { IAuthService } from './auth.service.interface'
 import type {
   ForgotPasswordBody,
@@ -19,7 +19,6 @@ import type {
   ResetPasswordBody,
   VerifyEmailBody,
 } from './auth.validation'
-import type { AuthenticationResult, OtpPurposeInput } from './auth.types'
 
 export interface AuthControllerDependencies {
   readonly authService: IAuthService
@@ -66,7 +65,7 @@ export class AuthController {
    * setting a non-`httpOnly` cookie the client must echo back in a header
    * on subsequent cookie-authenticated mutations.
    */
-  public csrfToken = (req: Request, res: Response): void => {
+  public csrfToken = async (req: Request, res: Response): Promise<void> => {
     const token = issueCsrfCookie(res, this.cookieConfig)
     res.success({ csrfToken: token }, 'CSRF token issued.')
   }
@@ -89,7 +88,7 @@ export class AuthController {
     const body = req.body as ResendOtpBody
 
     const result = await this.authService.resendOtp(
-      { email: body.email, purpose: body.purpose as OtpPurposeInput },
+      { email: body.email, purpose: body.purpose as OtpPurposeValue },
       this.buildContext(req),
     )
 

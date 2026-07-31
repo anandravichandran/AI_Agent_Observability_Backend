@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { API_KEY_SCOPES, API_KEY_SORT_FIELDS, API_KEY_STATUSES } from './api-key.constants'
+import { nonEmptyEnumTuple } from '@/core/utils/zod-enum'
 
 /**
  * Request schemas for self-service API key management.
@@ -24,7 +25,7 @@ export const createApiKeySchema = z
       .max(120, 'Key name is too long')
       .transform((value) => value.replace(/<[^>]*>/g, '')),
     scopes: z
-      .array(z.enum(API_KEY_SCOPES as [string, ...string[]]))
+      .array(z.enum(nonEmptyEnumTuple(API_KEY_SCOPES)))
       .min(1, 'Select at least one scope')
       .max(API_KEY_SCOPES.length),
     expiresInDays: z.coerce.number().int().min(1).max(3650).optional(),
@@ -35,8 +36,8 @@ export const apiKeyIdParamSchema = z.object({ id: objectId }).strict()
 
 export const listApiKeysQuerySchema = z
   .object({
-    status: z.enum(API_KEY_STATUSES as [string, ...string[]]).optional(),
-    sortBy: z.enum(API_KEY_SORT_FIELDS as [string, ...string[]]).optional(),
+    status: z.enum(nonEmptyEnumTuple(API_KEY_STATUSES)).optional(),
+    sortBy: z.enum(nonEmptyEnumTuple(API_KEY_SORT_FIELDS)).optional(),
     sortOrder: z.enum(['asc', 'desc']).optional(),
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),

@@ -1,0 +1,62 @@
+/**
+ * Stable, machine-readable error codes.
+ *
+ * Clients switch on `error.code`, never on `error.message` (which is free to
+ * change) and rarely on the status code (which is coarse). Codes are additive:
+ * never repurpose an existing one.
+ */
+export const ErrorCode = {
+  // --- Client ---------------------------------------------------------------
+  BAD_REQUEST: 'BAD_REQUEST',
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  INVALID_JSON: 'INVALID_JSON',
+  INVALID_IDENTIFIER: 'INVALID_IDENTIFIER',
+  NOT_FOUND: 'NOT_FOUND',
+  ROUTE_NOT_FOUND: 'ROUTE_NOT_FOUND',
+  METHOD_NOT_ALLOWED: 'METHOD_NOT_ALLOWED',
+  CONFLICT: 'CONFLICT',
+  DUPLICATE_RESOURCE: 'DUPLICATE_RESOURCE',
+  PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+  UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
+  RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
+
+  // --- Authentication -------------------------------------------------------
+  UNAUTHENTICATED: 'UNAUTHENTICATED',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  TOKEN_MISSING: 'TOKEN_MISSING',
+  TOKEN_INVALID: 'TOKEN_INVALID',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  TOKEN_REVOKED: 'TOKEN_REVOKED',
+  /** A rotated refresh token was presented again — probable theft. */
+  TOKEN_REUSE_DETECTED: 'TOKEN_REUSE_DETECTED',
+  SESSION_NOT_FOUND: 'SESSION_NOT_FOUND',
+  EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+  ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
+  EMAIL_ALREADY_REGISTERED: 'EMAIL_ALREADY_REGISTERED',
+  EMAIL_ALREADY_VERIFIED: 'EMAIL_ALREADY_VERIFIED',
+  PASSWORD_REUSED: 'PASSWORD_REUSED',
+
+  // --- OTP ------------------------------------------------------------------
+  OTP_INVALID: 'OTP_INVALID',
+  OTP_EXPIRED: 'OTP_EXPIRED',
+  OTP_ATTEMPTS_EXCEEDED: 'OTP_ATTEMPTS_EXCEEDED',
+  OTP_NOT_FOUND: 'OTP_NOT_FOUND',
+  OTP_RESEND_COOLDOWN: 'OTP_RESEND_COOLDOWN',
+
+  // --- Authorization --------------------------------------------------------
+  FORBIDDEN: 'FORBIDDEN',
+  INSUFFICIENT_ROLE: 'INSUFFICIENT_ROLE',
+
+  // --- Server ---------------------------------------------------------------
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
+  DATABASE_ERROR: 'DATABASE_ERROR',
+  DATABASE_UNAVAILABLE: 'DATABASE_UNAVAILABLE',
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  DEPENDENCY_FAILURE: 'DEPENDENCY_FAILURE',
+  MAIL_DELIVERY_FAILED: 'MAIL_DELIVERY_FAILED',
+  TIMEOUT: 'TIMEOUT',
+} as const
+
+export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode]

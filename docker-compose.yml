@@ -1,0 +1,47 @@
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    container_name: armforge-api
+    restart: unless-stopped
+    ports:
+      - '${PORT:-8080}:8080'
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      HOST: 0.0.0.0
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB_NAME: armforge
+      LOG_LEVEL: info
+      LOG_PRETTY: 'false'
+      SWAGGER_ENABLED: 'true'
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - armforge
+
+  mongo:
+    image: mongo:7
+    container_name: armforge-mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - armforge
+
+volumes:
+  mongo-data:
+
+networks:
+  armforge:
+    driver: bridge

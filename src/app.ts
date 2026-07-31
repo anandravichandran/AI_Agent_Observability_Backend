@@ -1,0 +1,164 @@
+import express, { type Express, type RequestHandler } from 'express'
+import cookieParser from 'cookie-parser'
+import type { AppConfig } from '@/config/config.types'
+import type { ILogger } from '@/core/logger/logger.interface'
+import type { WinstonLogger } from '@/core/logger/winston.logger'
+import { mountSwagger } from '@/docs/swagger'
+import {
+  createCompressionMiddleware,
+  createCorsMiddleware,
+  createErrorHandler,
+  createHelmetMiddleware,
+  createHttpLoggerMiddleware,
+  createNotFoundHandler,
+  createRateLimiter,
+  createRequestIdMiddleware,
+  createResponseFormatter,
+} from '@/middleware'
+import { createApiV1Router } from '@/routes'
+import type { HealthController } from '@/modules/health/health.controller'
+import type { AuthController } from '@/modules/auth/auth.controller'
+import type { AuditController } from '@/modules/audit/audit.controller'
+
+export interface CreateAppDependencies {
+  readonly config: AppConfig
+  readonly logger: WinstonLogger
+  readonly healthController: HealthController
+  readonly authController: AuthController
+  readonly auditController: AuditController
+  /** Access-token guard, pre-bound to the token service and cookie config. */
+  readonly authenticate: RequestHandler
+  /** Role gate bound to `admin`. */
+  readonly requireAdmin: RequestHandler
+}
+
+/**
+ * Builds the Express application.
+ *
+ * A pure factory over its dependencies: it never reads `process.env`, never
+ * constructs a collaborator, and never opens a socket. That separation is what
+ * lets an integration test build a fully wired app around a stub database and
+ * assert against it without starting a server.
+ *
+ * Middleware order is deliberate and load bearing:
+ *
+ *  1. `trust proxy`      — so `req.ip` is correct before anything reads it
+ *  2. request id         — every later log line needs the correlation id
+ *  3. security headers   — applied before any body is parsed or echoed
+ *  4. CORS               — must precede routing to answer preflight requests
+ *  5. compression        — wraps the response writer before handlers run
+ *  6. body parsers       — malformed JSON surfaces in the error handler
+ *  7. cookie parser      — must precede any middleware reading `req.cookies`
+ *  8. response formatter — installs `res.success()` for all handlers
+ *  9. access logging     — after the id exists, before routing
+ * 10. rate limiting      — rejects excess load before real work begins
+ * 11. routes             — the application itself
+ * 12. 404                — anything unmatched
+ * 13. error handler      — always last; Express requires it after all routes
+ */
+export const createApp = ({
+  config,
+  logger,
+  healthController,
+  authController,
+  auditController,
+  authenticate,
+  requireAdmin,
+}: CreateAppDependencies): Express => {
+  const app = express()
+
+  // 1. Proxy awareness. Required for accurate client IPs behind a load
+  //    balancer, which rate limiting, access logs, and the audit trail all
+  //    depend on. A wrong value here means every request appears to originate
+  //    from the proxy, collapsing per-IP rate limits into one shared bucket.
+  app.set('trust proxy', config.http.trustProxy)
+  app.disable('x-powered-by')
+  app.set('etag', 'strong')
+
+  // 2. Correlation id and request-scoped logger.
+  app.use(createRequestIdMiddleware(logger))
+
+  // 3 & 4. Security headers and cross-origin policy.
+  app.use(createHelmetMiddleware(config.swagger))
+  app.use(createCorsMiddleware(config.cors))
+
+  // 5. Response compression.
+  app.use(createCompressionMiddleware())
+
+  // 6. Body parsing, bounded by the configured limit.
+  app.use(express.json({ limit: config.http.bodyLimit }))
+  app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }))
+
+  // 7. Cookie parsing. Must sit ahead of `authenticate`, which reads the
+  //    access token from `req.cookies`; without it that object is undefined
+  //    and every cookie-authenticated request silently falls back to
+  //    “no token supplied”.
+  app.use(cookieParser())
+
+  // 8. Envelope helpers on the response object.
+  app.use(createResponseFormatter(config.http.version))
+
+  // 9. HTTP access logging.
+  app.use(createHttpLoggerMiddleware(logger, config.app))
+
+  // 10. Baseline rate limiting, scoped to the API surface so docs stay
+  //     reachable. Credential endpoints layer a much tighter budget on top.
+  app.use(config.http.basePath, createRateLimiter(config.rateLimit))
+
+  /**
+   * Stricter limiter for credential and OTP endpoints.
+   *
+   * The general budget (300 per 15 minutes) is far too generous for a login
+   * form: it would allow thousands of password guesses a day per address. This
+   * one is deliberately small, and it is what makes a 6-digit OTP defensible —
+   * 20 attempts per window against a million-value keyspace is not a viable
+   * guessing attack.
+   */
+  const credentialLimiter = createRateLimiter(config.rateLimit, {
+    windowMs: config.rateLimit.authWindowMs,
+    max: config.rateLimit.authMax,
+    skipObservabilityPaths: false,
+  })
+
+  // 11a. API documentation.
+  mountSwagger(app, config, logger)
+
+  // 11b. Versioned API surface.
+  app.use(
+    config.http.basePath,
+    createApiV1Router({
+      healthController,
+      authController,
+      auditController,
+      credentialLimiter,
+      authenticate,
+      requireAdmin,
+    }),
+  )
+
+  // 11c. Root convenience endpoint — a bare GET / should not 404 for an
+  //      operator or an uptime checker pointed at the origin.
+  app.get('/', (_req, res) => {
+    res.success(
+      {
+        service: config.app.name,
+        version: config.app.version,
+        environment: config.app.env,
+        documentation: config.swagger.enabled
+          ? `${config.http.basePath}${config.swagger.path}`
+          : null,
+        health: `${config.http.basePath}/health`,
+        authentication: `${config.http.basePath}/auth`,
+      },
+      `${config.app.title} is running.`,
+    )
+  })
+
+  // 12. Unmatched routes.
+  app.use(createNotFoundHandler())
+
+  // 13. Terminal error handler.
+  app.use(createErrorHandler(logger as ILogger, config.app))
+
+  return app
+}

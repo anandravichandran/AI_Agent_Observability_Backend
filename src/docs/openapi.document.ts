@@ -7,6 +7,8 @@ import {
   authTags,
   authWrapperSchemas,
 } from './openapi.auth'
+import { userPaths, userSchemas, userTags } from './openapi.users'
+import { adminPaths, adminSchemas } from './openapi.admin'
 
 /**
  * Hand-authored OpenAPI 3.0 document.
@@ -103,6 +105,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         description: 'Health, readiness, liveness and build metadata.',
       },
       ...authTags,
+      ...userTags,
     ],
 
     // Applied to every operation unless an operation overrides it with
@@ -173,6 +176,8 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       },
 
       ...authPaths,
+      ...userPaths,
+      ...adminPaths,
     },
 
     components: {
@@ -180,6 +185,8 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         ...componentSchemas,
         ...authSchemas,
         ...authWrapperSchemas,
+        ...userSchemas,
+        ...adminSchemas,
       },
       securitySchemes: authSecuritySchemes(config.cookie.accessName),
       headers: {

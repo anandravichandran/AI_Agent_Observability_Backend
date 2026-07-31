@@ -413,7 +413,15 @@ export const authPaths: Record<string, unknown> = {
       parameters: [
         { name: 'action', in: 'query', schema: { type: 'string' }, example: 'auth.login' },
         { name: 'actorId', in: 'query', schema: { type: 'string' } },
+        { name: 'actorEmail', in: 'query', schema: { type: 'string', format: 'email' } },
+        { name: 'category', in: 'query', schema: { type: 'string' }, example: 'authentication' },
         { name: 'outcome', in: 'query', schema: { type: 'string', enum: ['success', 'failure'] } },
+        {
+          name: 'search',
+          in: 'query',
+          description: 'Substring match on action, message, and actor email.',
+          schema: { type: 'string' },
+        },
         { name: 'from', in: 'query', schema: { type: 'string', format: 'date-time' } },
         { name: 'to', in: 'query', schema: { type: 'string', format: 'date-time' } },
         { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
@@ -421,6 +429,12 @@ export const authPaths: Record<string, unknown> = {
           name: 'limit',
           in: 'query',
           schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+        },
+        {
+          name: 'sort',
+          in: 'query',
+          description: 'Comma-separated fields; prefix with `-` for descending.',
+          schema: { type: 'string', example: '-createdAt' },
         },
       ],
       responses: {

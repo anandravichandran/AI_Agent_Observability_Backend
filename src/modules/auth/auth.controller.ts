@@ -1,9 +1,15 @@
 import type { Request, Response } from 'express'
-import type { CookieConfig } from '@/config/config.types'
-import { clearAuthCookies, readRefreshToken, setAuthCookies } from '@/core/http/cookies'
-import { requireActor, toRequestContext } from '@/core/http/request-context'
+import type { CookieConfig, DeviceFingerprintConfig } from '@/config/config.types'
+import {
+  clearAuthCookies,
+  issueCsrfCookie,
+  readRefreshToken,
+  setAuthCookies,
+} from '@/core/http/cookies'
+import { computeRequestFingerprint, requireActor, toRequestContext } from '@/core/http/request-context'
 import { UnauthorizedError } from '@/core/errors/app-error'
 import { ErrorCode } from '@/core/constants/error-codes'
+import type { AuthenticationResult, OtpPurposeInput, RequestContext } from './auth.types'
 import type { IAuthService } from './auth.service.interface'
 import type {
   ForgotPasswordBody,
@@ -18,6 +24,7 @@ import type { AuthenticationResult, OtpPurposeInput } from './auth.types'
 export interface AuthControllerDependencies {
   readonly authService: IAuthService
   readonly cookieConfig: CookieConfig
+  readonly deviceFingerprintConfig: DeviceFingerprintConfig
 }
 
 /**
@@ -34,22 +41,46 @@ export interface AuthControllerDependencies {
 export class AuthController {
   private readonly authService: IAuthService
   private readonly cookieConfig: CookieConfig
+  private readonly deviceFingerprintConfig: DeviceFingerprintConfig
 
   constructor(dependencies: AuthControllerDependencies) {
     this.authService = dependencies.authService
     this.cookieConfig = dependencies.cookieConfig
+    this.deviceFingerprintConfig = dependencies.deviceFingerprintConfig
+  }
+
+  /**
+   * Builds the service-layer {@link RequestContext}, folding in the coarse
+   * device fingerprint alongside the ambient IP/user-agent/request-id that
+   * `toRequestContext` already captures.
+   */
+  private buildContext(req: Request): RequestContext {
+    return {
+      ...toRequestContext(req),
+      fingerprint: computeRequestFingerprint(req, this.deviceFingerprintConfig),
+    }
+  }
+
+  /**
+   * Issues the double-submit CSRF cookie. Public, side-effect-free beyond
+   * setting a non-`httpOnly` cookie the client must echo back in a header
+   * on subsequent cookie-authenticated mutations.
+   */
+  public csrfToken = (req: Request, res: Response): void => {
+    const token = issueCsrfCookie(res, this.cookieConfig)
+    res.success({ csrfToken: token }, 'CSRF token issued.')
   }
 
   public register = async (req: Request, res: Response): Promise<void> => {
     const body = req.body as RegisterBody
-    const result = await this.authService.register(body, toRequestContext(req))
+    const result = await this.authService.register(body, this.buildContext(req))
 
     res.created(result, result.message)
   }
 
   public verifyEmail = async (req: Request, res: Response): Promise<void> => {
     const body = req.body as VerifyEmailBody
-    const result = await this.authService.verifyEmail(body, toRequestContext(req))
+    const result = await this.authService.verifyEmail(body, this.buildContext(req))
 
     this.sendAuthenticated(res, result, 'Email verified. You are now signed in.')
   }
@@ -59,7 +90,7 @@ export class AuthController {
 
     const result = await this.authService.resendOtp(
       { email: body.email, purpose: body.purpose as OtpPurposeInput },
-      toRequestContext(req),
+      this.buildContext(req),
     )
 
     res.success(result, 'If the account exists, a new code has been sent.')
@@ -67,7 +98,7 @@ export class AuthController {
 
   public login = async (req: Request, res: Response): Promise<void> => {
     const body = req.body as LoginBody
-    const result = await this.authService.login(body, toRequestContext(req))
+    const result = await this.authService.login(body, this.buildContext(req))
 
     this.sendAuthenticated(res, result, 'Signed in successfully.')
   }
@@ -85,7 +116,7 @@ export class AuthController {
       })
     }
 
-    const result = await this.authService.refresh(token, toRequestContext(req))
+    const result = await this.authService.refresh(token, this.buildContext(req))
 
     this.sendAuthenticated(res, result, 'Session refreshed.')
   }
@@ -97,7 +128,7 @@ export class AuthController {
       this.cookieConfig,
     )
 
-    await this.authService.logout(token, toRequestContext(req))
+    await this.authService.logout(token, this.buildContext(req))
 
     // Cookies are cleared unconditionally, even when no valid token was
     // presented. Logout must always leave the client in a signed-out state.
@@ -108,7 +139,7 @@ export class AuthController {
 
   public logoutAll = async (req: Request, res: Response): Promise<void> => {
     const actor = requireActor(req)
-    const revoked = await this.authService.logoutAll(actor.id, toRequestContext(req))
+    const revoked = await this.authService.logoutAll(actor.id, this.buildContext(req))
 
     clearAuthCookies(res, this.cookieConfig)
 
@@ -120,7 +151,7 @@ export class AuthController {
 
   public forgotPassword = async (req: Request, res: Response): Promise<void> => {
     const body = req.body as ForgotPasswordBody
-    const result = await this.authService.forgotPassword(body, toRequestContext(req))
+    const result = await this.authService.forgotPassword(body, this.buildContext(req))
 
     // Wording is intentionally conditional. The endpoint responds identically
     // whether or not the address is registered.
@@ -129,7 +160,7 @@ export class AuthController {
 
   public resetPassword = async (req: Request, res: Response): Promise<void> => {
     const body = req.body as ResetPasswordBody
-    await this.authService.resetPassword(body, toRequestContext(req))
+    await this.authService.resetPassword(body, this.buildContext(req))
 
     // Every session was revoked server-side; clear this client's cookies too
     // so its now-dead tokens are not sent on the next request.
@@ -168,6 +199,7 @@ export class AuthController {
     message: string,
   ): void {
     setAuthCookies(res, result.tokens, this.cookieConfig)
+    issueCsrfCookie(res, this.cookieConfig)
 
     res.success(
       {

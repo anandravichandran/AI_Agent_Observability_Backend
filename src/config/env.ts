@@ -171,6 +171,22 @@ const envSchema = z
       .int()
       .min(1024)
       .default(2 * 1024 * 1024),
+
+    // --- CSRF ----------------------------------------------------------------
+    CSRF_ENABLED: booleanFromString(true),
+    CSRF_COOKIE_NAME: z.string().min(1).default('armforge_csrf'),
+    CSRF_HEADER_NAME: z.string().min(1).default('x-csrf-token'),
+
+    // --- API keys --------------------------------------------------------------
+    API_KEY_PREFIX_LENGTH: z.coerce.number().int().min(4).max(32).default(10),
+    API_KEY_SECRET_BYTES: z.coerce.number().int().min(16).max(64).default(32),
+
+    // --- Device fingerprinting ---------------------------------------------------
+    DEVICE_FINGERPRINT_ENABLED: booleanFromString(true),
+    DEVICE_FINGERPRINT_ENFORCEMENT: z.enum(['log', 'strict']).default('log'),
+
+    // --- Geo tracking ------------------------------------------------------------
+    GEO_TRACKING_ENABLED: booleanFromString(true),
   })
   .superRefine((env, ctx) => {
     if (env.MONGO_MIN_POOL_SIZE > env.MONGO_MAX_POOL_SIZE) {

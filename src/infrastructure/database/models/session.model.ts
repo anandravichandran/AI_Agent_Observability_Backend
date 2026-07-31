@@ -22,6 +22,12 @@ export interface SessionAttributes {
   tokenHash: string
   ip: string
   userAgent: string
+  /** Coarse device fingerprint at issuance time; null when fingerprinting is disabled. */
+  fingerprint: string | null
+  /** Best-effort ISO country code; null when geo tracking is disabled or lookup failed. */
+  geoCountry: string | null
+  /** True when `ip` resolved to a private/loopback range. */
+  geoIsPrivate: boolean
   expiresAt: Date
   lastUsedAt: Date
   revokedAt?: Date | null
@@ -54,6 +60,9 @@ const sessionSchema = new Schema<SessionAttributes>(
     },
     ip: { type: String, required: true, default: 'unknown' },
     userAgent: { type: String, required: true, default: 'unknown' },
+    fingerprint: { type: String, default: null },
+    geoCountry: { type: String, default: null },
+    geoIsPrivate: { type: Boolean, default: false },
     expiresAt: { type: Date, required: true },
     lastUsedAt: { type: Date, required: true, default: () => new Date() },
     revokedAt: { type: Date, default: null },

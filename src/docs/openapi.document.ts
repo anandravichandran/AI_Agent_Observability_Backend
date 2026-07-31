@@ -3,6 +3,7 @@ import { componentSchemas } from './openapi.schemas'
 import { authPaths, authSchemas, authSecuritySchemes, authTags } from './openapi.auth'
 import { userPaths, userSchemas, userTags } from './openapi.users'
 import { modelPaths, modelSchemas, modelTags } from './openapi.models'
+import { apiKeyPaths, apiKeySchemas, apiKeyTags } from './openapi.apiKeys'
 
 /**
  * Hand-authored OpenAPI 3.0 document.
@@ -97,6 +98,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       ...authTags,
       ...userTags,
       ...modelTags,
+      ...apiKeyTags,
     ],
 
     security: [{ bearerAuth: [] }, { cookieAuth: [] }],
@@ -165,6 +167,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
       ...authPaths,
       ...userPaths,
       ...modelPaths,
+      ...apiKeyPaths,
     },
 
     components: {
@@ -173,6 +176,7 @@ export const buildOpenApiDocument = (config: AppConfig): Record<string, unknown>
         ...authSchemas,
         ...userSchemas,
         ...modelSchemas,
+        ...apiKeySchemas,
       },
       securitySchemes: authSecuritySchemes(config.cookie.accessName),
       headers: {

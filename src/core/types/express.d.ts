@@ -1,6 +1,7 @@
 import type { ILogger } from '@/core/logger/logger.interface'
 import type { PaginationMeta, SuccessResponse } from '@/core/http/api-response'
-import type { AuthenticatedActor } from '@/modules/auth/auth.types'
+import type { AuthenticatedActor, AuthTokenSource } from '@/modules/auth/auth.types'
+import type { ApiKeyContext } from '@/modules/apiKeys/api-key.types'
 
 /**
  * Express type augmentation.
@@ -24,6 +25,10 @@ declare global {
        * middleware and use `requireActor(req)`.
        */
       user?: AuthenticatedActor
+      /** Set by `authenticate` alongside `user`; read by `csrf.middleware.ts`. */
+      authTokenSource?: AuthTokenSource
+      /** Present only after `createApiKeyAuthenticate` has run. */
+      apiKeyContext?: ApiKeyContext
     }
 
     interface Response {

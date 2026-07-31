@@ -130,6 +130,7 @@ export interface OtpConfig {
 export interface CookieConfig {
   readonly accessName: string
   readonly refreshName: string
+  readonly csrfName: string
   readonly domain?: string
   readonly secure: boolean
   readonly sameSite: SameSitePolicy
@@ -191,4 +192,35 @@ export interface ModelUploadConfig {
 
 export interface AppConfig {
   readonly modelUpload: ModelUploadConfig
+}
+
+// Declaration merging extends AppConfig with the Phase 5 security slices —
+// CSRF, API keys, device fingerprinting, and geo tracking — so each phase's
+// config remains additive and independently reviewable.
+export interface CsrfConfig {
+  readonly enabled: boolean
+  readonly cookieName: string
+  readonly headerName: string
+}
+
+export interface ApiKeyConfig {
+  readonly prefixLength: number
+  readonly secretBytes: number
+}
+
+export interface DeviceFingerprintConfig {
+  readonly enabled: boolean
+  /** `log` records a mismatch without blocking; `strict` rejects the refresh. */
+  readonly enforcement: 'log' | 'strict'
+}
+
+export interface GeoConfig {
+  readonly enabled: boolean
+}
+
+export interface AppConfig {
+  readonly csrf: CsrfConfig
+  readonly apiKey: ApiKeyConfig
+  readonly deviceFingerprint: DeviceFingerprintConfig
+  readonly geo: GeoConfig
 }

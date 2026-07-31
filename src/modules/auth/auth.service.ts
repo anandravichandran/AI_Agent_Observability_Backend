@@ -1,5 +1,11 @@
 import crypto from 'node:crypto'
-import type { AppMetaConfig, AuthConfig, OtpConfig } from '@/config/config.types'
+import type {
+  AppMetaConfig,
+  AuthConfig,
+  DeviceFingerprintConfig,
+  OtpConfig,
+} from '@/config/config.types'
+import type { IGeoLocationService } from '@/infrastructure/geo'
 import { ErrorCode } from '@/core/constants/error-codes'
 import {
   ConflictError,
@@ -66,6 +72,8 @@ export interface AuthServiceDependencies {
   readonly authConfig: AuthConfig
   readonly otpConfig: OtpConfig
   readonly appConfig: AppMetaConfig
+  readonly deviceFingerprintConfig: DeviceFingerprintConfig
+  readonly geoLocationService: IGeoLocationService
 }
 
 /**
@@ -459,6 +467,38 @@ export class AuthService implements IAuthService {
       })
     }
 
+    // Device-fingerprint drift detection. A mismatch does not necessarily mean
+    // theft (a legitimate user's browser/UA can change), so `log` enforcement
+    // just records it for the audit trail; only `strict` rejects the refresh.
+    if (
+      this.deps.deviceFingerprintConfig.enabled &&
+      session.fingerprint &&
+      context.fingerprint &&
+      session.fingerprint !== context.fingerprint
+    ) {
+      await this.deps.auditService.record({
+        action: AuditAction.TOKEN_REFRESH,
+        category: AuditCategory.SECURITY,
+        outcome: this.deps.deviceFingerprintConfig.enforcement === 'strict' ? 'failure' : 'success',
+        actorId: user.id,
+        actorEmail: user.email,
+        actorRole: user.role,
+        ip: context.ip,
+        userAgent: context.userAgent,
+        requestId: context.requestId,
+        targetType: 'session',
+        targetId: session.id,
+        message: 'Device fingerprint mismatch on refresh',
+        metadata: { enforcement: this.deps.deviceFingerprintConfig.enforcement },
+      })
+
+      if (this.deps.deviceFingerprintConfig.enforcement === 'strict') {
+        throw new UnauthorizedError('This session was issued to a different device.', {
+          code: ErrorCode.DEVICE_FINGERPRINT_MISMATCH,
+        })
+      }
+    }
+
     const rotated = await this.rotateSession(user, session.familyId, context)
 
     await this.deps.sessions.revoke(
@@ -723,12 +763,18 @@ export class AuthService implements IAuthService {
       type: TokenType.REFRESH,
     })
 
+    // Best-effort: a geo lookup failure must never block issuing a session.
+    const geo = await this.deps.geoLocationService.resolve(context.ip).catch(() => null)
+
     const session = await this.deps.sessions.create({
       userId: user.id,
       familyId,
       tokenHash: this.deps.tokenService.hashToken(refresh.token),
       ip: context.ip,
       userAgent: context.userAgent,
+      fingerprint: context.fingerprint ?? null,
+      geoCountry: geo?.country ?? null,
+      geoIsPrivate: geo?.isPrivate ?? false,
       expiresAt: refresh.expiresAt,
     })
 

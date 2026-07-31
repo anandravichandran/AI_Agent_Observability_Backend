@@ -100,6 +100,13 @@ export const createAuthRouter = (dependencies: AuthRouterDependencies): Router =
   /** Also public — signing out with an expired access token must still work. */
   router.post('/logout', validate({ body: logoutSchema }), asyncHandler(controller.logout))
 
+  /**
+   * Issues the double-submit CSRF cookie. Public and side-effect-free: it
+   * grants no capability by itself, only the token a subsequent
+   * cookie-authenticated mutation must echo back in a header.
+   */
+  router.get('/csrf-token', asyncHandler(controller.csrfToken))
+
   // --- Authenticated ------------------------------------------------------
 
   router.get('/me', authenticate, asyncHandler(controller.me))

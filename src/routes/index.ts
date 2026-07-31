@@ -11,6 +11,8 @@ import type { AdminController } from '@/modules/admin/admin.controller'
 import { createAdminRouter } from '@/modules/admin/admin.routes'
 import type { ModelController } from '@/modules/models/model.controller'
 import { createModelRouter } from '@/modules/models/model.routes'
+import type { ApiKeyController } from '@/modules/apiKeys'
+import { createApiKeyRouter } from '@/modules/apiKeys'
 
 export interface ApiRouterDependencies {
   readonly healthController: HealthController
@@ -19,6 +21,7 @@ export interface ApiRouterDependencies {
   readonly userController: UserController
   readonly adminController: AdminController
   readonly modelController: ModelController
+  readonly apiKeyController: ApiKeyController
   readonly credentialLimiter: RequestHandler
   readonly authenticate: RequestHandler
   readonly requireAdmin: RequestHandler
@@ -74,6 +77,15 @@ export const createApiV1Router = (dependencies: ApiRouterDependencies): Router =
       controller: dependencies.modelController,
       authenticate: dependencies.authenticate,
       modelUpload: dependencies.modelUpload,
+    }),
+  )
+
+  // Phase 5: self-service API key management.
+  router.use(
+    '/api-keys',
+    createApiKeyRouter({
+      controller: dependencies.apiKeyController,
+      authenticate: dependencies.authenticate,
     }),
   )
 

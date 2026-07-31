@@ -125,6 +125,12 @@ export interface SessionEntity {
   readonly tokenHash: string
   readonly ip: string
   readonly userAgent: string
+  /** Coarse device fingerprint at issuance time; used to detect refresh-time drift. */
+  readonly fingerprint: string | null
+  /** Best-effort ISO country code; null when geo tracking is disabled or lookup failed. */
+  readonly geoCountry: string | null
+  /** True when `ip` resolved to a private/loopback range. */
+  readonly geoIsPrivate: boolean
   readonly expiresAt: Date
   readonly lastUsedAt: Date
   readonly revokedAt: Date | null
@@ -139,5 +145,8 @@ export interface CreateSessionData {
   readonly tokenHash: string
   readonly ip: string
   readonly userAgent: string
+  readonly fingerprint: string | null
+  readonly geoCountry: string | null
+  readonly geoIsPrivate: boolean
   readonly expiresAt: Date
 }
